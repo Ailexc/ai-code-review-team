@@ -1,6 +1,6 @@
 # 项目进度 Check List
 
-> 最后更新：2026-08-21（Phase A+B+C+D 完成）
+> 最后更新：2026-08-21（Phase A-E 完成，72 测试）
 
 ## Day 1 MVP（基础框架）✅ 全部完成
 
@@ -144,7 +144,19 @@
 
 ### 已知限制（Phase E 优化）
 
-- WS 订阅前已发射的 agent_started 事件可能丢失（单 Agent 快速审查时）；可在连接时推送状态快照改善
+- ~~WS 订阅前已发射的 agent_started 事件可能丢失~~ ✅ 已修复（事件历史回放）
+- Langfuse 推理链追踪需外部服务/API Key（structlog 已覆盖结构化日志）
+
+---
+
+## Phase E（V6.0-V7.0 增量审查 + 优化完善）✅ 完成
+
+- [x] WS 事件历史回放（`progress.py` 缓冲 + 订阅时回放，修复 agent_started 丢失）
+- [x] Git diff 解析器 `services/diff_parser.py`（提取变更文件 + 新增行号）
+- [x] 增量审查端点 `POST /reviews/run-incremental`（只审查 diff 变更文件，贴合 PR 场景）
+- [x] 真实 Git 仓库端到端验证（正确识别变更文件与行号）
+- [x] structlog 结构化日志（全链路已用）
+- [x] 测试总数 72 个全过（含 diff 解析 9 + 增量审查 3 + 进度回放 1）
 
 ---
 

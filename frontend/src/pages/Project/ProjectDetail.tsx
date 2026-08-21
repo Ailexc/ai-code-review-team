@@ -19,6 +19,7 @@ export default function ProjectDetail() {
   const [reviewResult, setReviewResult] = useState<ReviewResult | null>(null);
   const [reviewType, setReviewType] = useState('full');
   const [progressOpen, setProgressOpen] = useState(false);
+  const [incrementalLoading, setIncrementalLoading] = useState(false);
   const [form] = Form.useForm();
 
   const fetchProject = () => {
@@ -84,6 +85,20 @@ export default function ProjectDetail() {
     navigate('/reviews');
   };
 
+  const handleIncrementalReview = async () => {
+    if (!project) return;
+    setIncrementalLoading(true);
+    try {
+      const result = await triggerApi.runIncremental(project.id, reviewType);
+      message.success(`增量审查完成，发现 ${result.total_findings} 个问题`);
+      navigate(`/reviews/${result.id}`);
+    } catch {
+      message.error('增量审查失败（需项目为 Git 仓库且有提交）');
+    } finally {
+      setIncrementalLoading(false);
+    }
+  };
+
   if (loading) return <Spin size="large" style={{ display: 'block', marginTop: 100 }} />;
   if (!project) return <div>项目不存在</div>;
 
@@ -120,6 +135,7 @@ export default function ProjectDetail() {
             ]}
           />
           <Button type="primary" icon={<SafetyOutlined />} onClick={handleRunReview}>开始审查</Button>
+          <Button icon={<ThunderboltOutlined />} loading={incrementalLoading} onClick={handleIncrementalReview}>增量审查(PR)</Button>
         </Space>
       </div>
 

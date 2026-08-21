@@ -57,6 +57,9 @@ export const triggerApi = {
   runReview: (projectId: string, reviewType: string = 'full'): Promise<ReviewResult> =>
     api.post(`/reviews/run?project_id=${projectId}&review_type=${reviewType}`),
 
+  runIncremental: (projectId: string, reviewType: string = 'full', base: string = 'HEAD~1'): Promise<ReviewResult> =>
+    api.post(`/reviews/run-incremental?project_id=${projectId}&review_type=${reviewType}&base=${base}`),
+
   runReviewAsync: async (projectId: string, reviewType: string = 'full'): Promise<ReviewResult> => {
     // 异步触发，立即返回 running 状态
     const resp = await fetch(

@@ -80,6 +80,43 @@ async def run_review(
         raise HTTPException(status_code=500, detail=f"审查执行失败: {e}")
 
 
+@router.post("/run-incremental", response_model=ReviewResponse, status_code=201)
+async def run_incremental_review(
+    project_id: str,
+    review_type: str = "full",
+    base: str = "HEAD~1",
+    head: str = "HEAD",
+    db: AsyncSession = Depends(get_db),
+):
+    """增量审查 — 只审查 Git diff 变更文件（贴合 PR 场景，控制 token 成本）"""
+    from app.services.diff_parser import get_changed_files
+
+    project_result = await db.execute(select(Project).where(Project.id == project_id))
+    project = project_result.scalar_one_or_none()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    diff = get_changed_files(project.path, base=base, head=head)
+    if not diff.changed_file_paths:
+        raise HTTPException(status_code=400, detail=f"未检测到变更文件（{base}..{head}），请确认项目为 Git 仓库且有提交")
+
+    logger.info("增量审查", project=project.name, files=diff.changed_file_paths,
+                added_lines=diff.total_added_lines)
+
+    service = ReviewService(db)
+    try:
+        review = await service.run_review(
+            project=project,
+            review_type=review_type,
+            trigger_type="incremental",
+            file_paths=diff.changed_file_paths,
+        )
+        return ReviewResponse.model_validate(review)
+    except Exception as e:
+        logger.error("增量审查失败", error=str(e))
+        raise HTTPException(status_code=500, detail=f"增量审查失败: {e}")
+
+
 @router.post("/run-async", response_model=ReviewResponse, status_code=202)
 async def run_review_async(
     project_id: str,

@@ -76,3 +76,20 @@ async def test_progress_emitter_no_subs_no_error():
     emitter = ProgressEmitter()
     # 没有订阅者时发布不应报错
     await emitter.emit("rev-3", "orphan_event")
+
+
+@pytest.mark.asyncio
+async def test_progress_emitter_replays_history():
+    """订阅前发射的事件应在订阅时回放"""
+    emitter = ProgressEmitter()
+    # 无订阅者时发射事件
+    await emitter.emit("rev-4", "review_started", {"project": "x"})
+    await emitter.emit("rev-4", "agent_started", {"agent": "security"})
+    # 现在订阅
+    q = emitter.subscribe("rev-4")
+    # 应立即收到 2 条历史事件
+    msg1 = await asyncio.wait_for(q.get(), timeout=1.0)
+    msg2 = await asyncio.wait_for(q.get(), timeout=1.0)
+    assert msg1["event"] == "review_started"
+    assert msg2["event"] == "agent_started"
+    assert msg2["data"]["agent"] == "security"
