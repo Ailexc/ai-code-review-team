@@ -1,4 +1,4 @@
-"""安全审查 Agent — 使用 Semgrep 进行静态安全分析"""
+"""安全审查 Agent — 使用 Semgrep 进行静态安全分析 + LLM 智能分析"""
 
 import json
 import subprocess
@@ -31,19 +31,50 @@ SEVERITY_MAP = {
     "INFO": "suggestion",
 }
 
+# LLM 分析提示词
+SECURITY_PROMPT = """你是一个代码安全专家。请分析以下代码，找出安全漏洞和风险。
+
+代码文件: {file_path}
+```
+{code_content}
+```
+
+请用 JSON 格式返回分析结果，格式如下:
+```json
+{{
+    "findings": [
+        {{
+            "rule_id": "SEC-001",
+            "severity": "critical/warning/suggestion",
+            "message": "简短描述问题",
+            "file_path": "文件路径",
+            "line_number": 行号,
+            "code_snippet": "问题代码片段",
+            "suggestion": "修复建议"
+        }}
+    ]
+}}
+```
+
+注意:
+1. 只返回 JSON，不要有其他内容
+2. 如果没有安全问题，返回空数组: {{"findings": []}}
+3. severity 分为: critical (严重), warning (警告), suggestion (建议)
+4. 重点关注: SQL注入、命令注入、XSS、硬编码密码、不安全的反序列化、eval使用等"""
+
 
 class SecurityAgent(BaseAgent):
-    """安全审查 Agent — 使用 Semgrep 扫描代码漏洞"""
+    """安全审查 Agent — 使用 Semgrep + LLM 进行安全扫描"""
 
     name = "security"
-    description = "代码安全审查（Semgrep 静态分析）"
+    description = "代码安全审查（Semgrep 静态分析 + LLM 智能分析）"
 
     async def analyze(
         self,
         project_path: str,
         file_paths: list[str] | None = None,
     ) -> list[dict[str, Any]]:
-        """运行 Semgrep 安全扫描"""
+        """运行安全扫描（Semgrep + LLM）"""
         path = Path(project_path)
         if not path.exists():
             logger.warning("项目路径不存在", path=project_path)
@@ -54,12 +85,21 @@ class SecurityAgent(BaseAgent):
         rulesets = SEMGREP_RULESETS.get(language, SEMGREP_RULESETS["default"])
 
         findings = []
+
+        # 1. Semgrep 静态分析
         for ruleset in rulesets:
             try:
                 results = self._run_semgrep(path, ruleset, file_paths)
                 findings.extend(results)
             except Exception as e:
                 logger.warning("Semgrep 规则集执行失败", ruleset=ruleset, error=str(e))
+
+        # 2. LLM 智能分析（如果配置了 API Key）
+        try:
+            llm_findings = await self._run_llm_analysis(path, file_paths)
+            findings.extend(llm_findings)
+        except Exception as e:
+            logger.warning("LLM 分析失败，回退到 Semgrep 结果", error=str(e))
 
         # 去重
         seen = set()
@@ -72,6 +112,115 @@ class SecurityAgent(BaseAgent):
 
         logger.info("安全扫描完成", path=project_path, findings=len(unique))
         return unique
+
+    async def _run_llm_analysis(
+        self,
+        path: Path,
+        file_paths: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """使用 LLM 进行智能安全分析"""
+        try:
+            from app.models.llm_config import LLMConfig
+            from app.core.database import async_session_factory
+            from sqlalchemy import select
+            import httpx
+
+            # 获取默认 LLM 配置
+            async with async_session_factory() as db:
+                result = await db.execute(
+                    select(LLMConfig).where(
+                        LLMConfig.is_enabled == True,
+                        LLMConfig.is_default == True,
+                        LLMConfig.api_key.isnot(None)
+                    )
+                )
+                llm_config = result.scalar_one_or_none()
+
+                if not llm_config:
+                    logger.info("未找到有效的 LLM 配置，跳过 LLM 分析")
+                    return []
+
+                # 收集要分析的文件
+                files_to_analyze = []
+                if file_paths:
+                    for fp in file_paths[:5]:  # 限制数量避免 token 过多
+                        full_path = path / fp
+                        if full_path.exists() and full_path.suffix in ('.py', '.js', '.ts', '.tsx', '.jsx'):
+                            files_to_analyze.append((fp, full_path.read_text(errors='ignore')[:5000]))
+                else:
+                    # 扫描主要代码文件
+                    for ext in ('*.py', '*.js', '*.ts'):
+                        for f in path.rglob(ext)[:10]:  # 限制数量
+                            if '/node_modules/' not in str(f) and '/__pycache__/' not in str(f):
+                                rel_path = str(f.relative_to(path))
+                                content = f.read_text(errors='ignore')[:5000]
+                                files_to_analyze.append((rel_path, content))
+                                if len(files_to_analyze) >= 5:
+                                    break
+                        if len(files_to_analyze) >= 5:
+                            break
+
+                if not files_to_analyze:
+                    return []
+
+                # 调用 LLM 分析
+                findings = []
+                base_url = llm_config.base_url or "https://api.xiaomimimo.com/v1"
+
+                async with httpx.AsyncClient(timeout=60) as client:
+                    for file_path, content in files_to_analyze:
+                        prompt = SECURITY_PROMPT.format(file_path=file_path, code_content=content)
+
+                        try:
+                            resp = await client.post(
+                                f"{base_url}/chat/completions",
+                                headers={
+                                    "Authorization": f"Bearer {llm_config.api_key}",
+                                    "Content-Type": "application/json"
+                                },
+                                json={
+                                    "model": llm_config.model,
+                                    "messages": [{"role": "user", "content": prompt}],
+                                    "max_tokens": min(llm_config.max_tokens, 4096),
+                                    "temperature": llm_config.temperature,
+                                },
+                            )
+
+                            if resp.status_code == 200:
+                                data = resp.json()
+                                reply = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+
+                                # 解析 JSON 结果
+                                try:
+                                    # 提取 JSON 部分
+                                    json_start = reply.find('{')
+                                    json_end = reply.rfind('}') + 1
+                                    if json_start >= 0 and json_end > json_start:
+                                        result_data = json.loads(reply[json_start:json_end])
+                                        for finding in result_data.get("findings", []):
+                                            findings.append({
+                                                "rule_id": finding.get("rule_id", "LLM-SEC"),
+                                                "severity": finding.get("severity", "warning"),
+                                                "message": finding.get("message", ""),
+                                                "file_path": finding.get("file_path", file_path),
+                                                "line_start": finding.get("line_number"),
+                                                "code_snippet": finding.get("code_snippet", "")[:500],
+                                                "suggestion": finding.get("suggestion", ""),
+                                            })
+                                except json.JSONDecodeError:
+                                    logger.warning("LLM 返回的 JSON 解析失败", file=file_path)
+                            else:
+                                logger.warning("LLM API 调用失败", status=resp.status_code, file=file_path)
+
+                        except Exception as e:
+                            logger.warning("LLM 分析单个文件失败", file=file_path, error=str(e))
+
+                logger.info("LLM 分析完成", files=len(files_to_analyze), findings=len(findings))
+                return findings
+
+        except ImportError:
+            logger.info("数据库模块不可用，跳过 LLM 分析")
+            return []
 
     def _run_semgrep(
         self,

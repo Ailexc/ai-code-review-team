@@ -1,6 +1,7 @@
 """审查管理 API"""
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import PlainTextResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -8,9 +9,11 @@ import structlog
 
 from app.core.database import get_db
 from app.models.review import Review
+from app.models.finding import Finding
 from app.models.project import Project
 from app.schemas.review import ReviewCreate, ReviewResponse
 from app.services.review_service import ReviewService
+from app.services.report_generator import ReportGenerator
 
 logger = structlog.get_logger()
 router = APIRouter()
@@ -86,3 +89,38 @@ async def get_review(
     if not review:
         raise HTTPException(status_code=404, detail="审查不存在")
     return ReviewResponse.model_validate(review)
+
+
+@router.get("/{review_id}/report", response_class=PlainTextResponse)
+async def get_review_report(
+    review_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """下载审查报告（Markdown 格式）"""
+    result = await db.execute(select(Review).where(Review.id == review_id))
+    review = result.scalar_one_or_none()
+    if not review:
+        raise HTTPException(status_code=404, detail="审查不存在")
+
+    # 获取项目信息
+    project_result = await db.execute(select(Project).where(Project.id == review.project_id))
+    project = project_result.scalar_one_or_none()
+    project_name = project.name if project else "Unknown"
+
+    # 获取发现列表
+    findings_result = await db.execute(
+        select(Finding).where(Finding.review_id == review_id).order_by(Finding.severity)
+    )
+    findings = findings_result.scalars().all()
+
+    # 生成报告
+    generator = ReportGenerator()
+    report = generator.generate(review, findings, project_name)
+
+    return PlainTextResponse(
+        content=report,
+        media_type="text/markdown",
+        headers={
+            "Content-Disposition": f"attachment; filename=review-{review_id[:8]}.md"
+        }
+    )

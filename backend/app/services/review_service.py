@@ -65,7 +65,6 @@ class ReviewService:
                         review_id=review.id,
                         agent_name="security",
                         category="security",
-                        rule_id=f.get("rule_id", ""),
                         severity=f.get("severity", "warning"),
                         message=f.get("message", ""),
                         description=f.get("message", ""),

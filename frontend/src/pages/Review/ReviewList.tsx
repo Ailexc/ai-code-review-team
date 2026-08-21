@@ -84,6 +84,10 @@ export default function ReviewList() {
         loading={loading}
         pagination={{ pageSize: 20 }}
         locale={{ emptyText: '暂无审查记录，可在项目详情页或"触发审查"页面发起审查。' }}
+        onRow={(record) => ({
+          onClick: () => navigate(`/reviews/${record.id}`),
+          style: { cursor: 'pointer' },
+        })}
       />
     </div>
   );
