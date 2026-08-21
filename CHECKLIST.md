@@ -1,6 +1,6 @@
 # 项目进度 Check List
 
-> 最后更新：2026-08-21（Phase A+B+C 完成）
+> 最后更新：2026-08-21（Phase A+B+C+D 完成）
 
 ## Day 1 MVP（基础框架）✅ 全部完成
 
@@ -130,6 +130,24 @@
 
 ---
 
+## Phase D（V5.0 实时进度 + 健康度聚合）✅ 完成
+
+- [x] 健康度评分 `services/health.py`（基于 findings 负分制 0-100）+ 审查快照 + 项目健康度更新
+- [x] 进度事件总线 `services/progress.py`（内存 pub/sub）
+- [x] WebSocket 端点 `GET /reviews/ws/{id}`（实时推送 agent_started/completed、review_completed，含心跳）
+- [x] 非阻塞审查 `POST /reviews/run-async`（202 立即返回 running，后台执行 + 独立会话提交）
+- [x] ReviewService 各阶段发布进度事件
+- [x] 前端 `ReviewProgress` 组件（WS 订阅 + Agent 进度时间线 + 健康度展示）
+- [x] 项目详情页接入实时进度（触发→进度→完成跳转）
+- [x] 测试：健康度计算 + 进度 pub/sub + 异步审查轮询（60 个全过）
+- [x] 端到端验证：WS 实时事件流（connected→agent_completed→review_completed）
+
+### 已知限制（Phase E 优化）
+
+- WS 订阅前已发射的 agent_started 事件可能丢失（单 Agent 快速审查时）；可在连接时推送状态快照改善
+
+---
+
 ## 已解决的技术问题
 
 1. ✅ 前端代理 — Vite proxy → Docker 内部网络
@@ -145,7 +163,7 @@
 2. ~~Semgrep 首次下载规则较慢~~ ✅ 规则已缓存，后续扫描正常
 3. ~~审查结果前端展示待完善~~ ✅ 已完成
 4. LLM 为推理模型，单文件分析 ~40s（已通过并发优化，多文件并行）
-5. 后续阶段：~~依赖审查 + 测试覆盖（V4.0）~~ ✅ 完成；实时进度 + 健康度（V5.0）、增量审查 + 优化（V6.0-V7.0）
+5. 后续阶段：~~依赖审查 + 测试覆盖（V4.0）~~ ✅；~~实时进度 + 健康度（V5.0）~~ ✅；增量审查 + 优化（V6.0-V7.0）
 
 ---
 

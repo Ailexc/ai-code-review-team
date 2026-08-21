@@ -56,4 +56,17 @@ export const triggerApi = {
 
   runReview: (projectId: string, reviewType: string = 'full'): Promise<ReviewResult> =>
     api.post(`/reviews/run?project_id=${projectId}&review_type=${reviewType}`),
+
+  runReviewAsync: async (projectId: string, reviewType: string = 'full'): Promise<ReviewResult> => {
+    // 异步触发，立即返回 running 状态
+    const resp = await fetch(
+      `/api/v1/reviews/run-async?project_id=${projectId}&review_type=${reviewType}`,
+      { method: 'POST' },
+    );
+    if (!resp.ok) throw new Error('触发审查失败');
+    return resp.json();
+  },
+
+  reviewWsUrl: (reviewId: string): string =>
+    `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/v1/reviews/ws/${reviewId}`,
 };

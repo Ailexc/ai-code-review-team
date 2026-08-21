@@ -4,6 +4,7 @@ import { Descriptions, Card, Tag, Button, message, Spin, Modal, Form, Input, Sel
 import { EditOutlined, ThunderboltOutlined, ArrowLeftOutlined, SafetyOutlined } from '@ant-design/icons';
 import { projectApi, Project } from '@/api/projectApi';
 import { triggerApi, TriggerResult, ReviewResult } from '@/api/triggerApi';
+import ReviewProgress from '@/components/Review/ReviewProgress';
 import dayjs from 'dayjs';
 
 export default function ProjectDetail() {
@@ -15,9 +16,9 @@ export default function ProjectDetail() {
   const [triggerOpen, setTriggerOpen] = useState(false);
   const [triggerLoading, setTriggerLoading] = useState(false);
   const [triggerResult, setTriggerResult] = useState<TriggerResult | null>(null);
-  const [reviewLoading, setReviewLoading] = useState(false);
   const [reviewResult, setReviewResult] = useState<ReviewResult | null>(null);
   const [reviewType, setReviewType] = useState('full');
+  const [progressOpen, setProgressOpen] = useState(false);
   const [form] = Form.useForm();
 
   const fetchProject = () => {
@@ -66,25 +67,21 @@ export default function ProjectDetail() {
     }
   };
 
-  const handleRunReview = async () => {
+  const handleRunReview = () => {
     if (!project) return;
-    setReviewLoading(true);
     setReviewResult(null);
-    try {
-      const result = await triggerApi.runReview(project.id, reviewType);
-      setReviewResult(result);
-      const typeLabels: Record<string, string> = {
-        full: '综合', security: '安全', code_style: '规范',
-        dependency: '依赖', test_coverage: '测试覆盖',
-      };
-      const typeLabel = typeLabels[reviewType] || reviewType;
-      message.success(`${typeLabel}审查完成，发现 ${result.total_findings} 个问题`);
-      fetchProject(); // 刷新项目数据（健康度可能更新）
-    } catch {
-      message.error('审查失败');
-    } finally {
-      setReviewLoading(false);
-    }
+    setProgressOpen(true);
+  };
+
+  const handleProgressCompleted = (_reviewId: string, summary: string, _health?: number) => {
+    setProgressOpen(false);
+    const typeLabels: Record<string, string> = {
+      full: '综合', security: '安全', code_style: '规范',
+      dependency: '依赖', test_coverage: '测试覆盖',
+    };
+    message.success(`${typeLabels[reviewType] || reviewType}审查完成：${summary}`);
+    fetchProject();
+    navigate('/reviews');
   };
 
   if (loading) return <Spin size="large" style={{ display: 'block', marginTop: 100 }} />;
@@ -122,7 +119,7 @@ export default function ProjectDetail() {
               { label: '测试覆盖', value: 'test_coverage' },
             ]}
           />
-          <Button type="primary" icon={<SafetyOutlined />} loading={reviewLoading} onClick={handleRunReview}>开始审查</Button>
+          <Button type="primary" icon={<SafetyOutlined />} onClick={handleRunReview}>开始审查</Button>
         </Space>
       </div>
 
@@ -227,6 +224,15 @@ export default function ProjectDetail() {
           </div>
         )}
       </Modal>
+
+      {/* 实时审查进度 */}
+      <ReviewProgress
+        projectId={project.id}
+        reviewType={reviewType}
+        open={progressOpen}
+        onClose={() => setProgressOpen(false)}
+        onCompleted={handleProgressCompleted}
+      />
     </div>
   );
 }

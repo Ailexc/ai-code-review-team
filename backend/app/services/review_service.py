@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import structlog
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.review import Review
@@ -17,6 +18,8 @@ from app.agents.security_agent import SecurityAgent
 from app.agents.code_style_agent import CodeStyleAgent
 from app.agents.dependency_agent import DependencyAgent
 from app.agents.test_coverage_agent import TestCoverageAgent
+from app.services.health import compute_health_score
+from app.services.progress import progress_emitter
 
 logger = structlog.get_logger()
 
@@ -51,26 +54,49 @@ class ReviewService:
         review_type: str = "full",
         trigger_type: str = "manual",
         file_paths: list[str] | None = None,
+        existing_review_id: str | None = None,
     ) -> Review:
         """执行一次完整审查（多 Agent 并行）
 
         Args:
             project: 项目对象
-            review_type: 审查类型 (full / security / code_style)
+            review_type: 审查类型 (full / security / code_style / dependency / test_coverage)
             trigger_type: 触发方式 (manual / cli / web_trigger)
             file_paths: 指定审查的文件列表，None 则扫描项目目录
+            existing_review_id: 若由 run-async 预创建，则复用该审查记录
         """
-        # 创建审查记录
-        review = Review(
-            project_id=project.id,
-            trigger_type=trigger_type,
-            review_type=review_type,
-            status="running",
-            started_at=datetime.now(timezone.utc),
-        )
-        self.db.add(review)
-        await self.db.flush()
+        # 创建或复用审查记录
+        if existing_review_id:
+            result = await self.db.execute(select(Review).where(Review.id == existing_review_id))
+            review = result.scalar_one_or_none()
+            if not review:
+                review = Review(
+                    project_id=project.id,
+                    trigger_type=trigger_type,
+                    review_type=review_type,
+                    status="running",
+                    started_at=datetime.now(timezone.utc),
+                )
+                self.db.add(review)
+                await self.db.flush()
+            else:
+                review.status = "running"
+                review.started_at = datetime.now(timezone.utc)
+                await self.db.flush()
+        else:
+            review = Review(
+                project_id=project.id,
+                trigger_type=trigger_type,
+                review_type=review_type,
+                status="running",
+                started_at=datetime.now(timezone.utc),
+            )
+            self.db.add(review)
+            await self.db.flush()
         logger.info("开始审查", review_id=review.id, project=project.name, type=review_type)
+        await progress_emitter.emit(review.id, "review_started", {
+            "review_type": review_type, "project": project.name,
+        })
 
         start_time = time.monotonic()
         all_findings: list[Finding] = []
@@ -82,11 +108,15 @@ class ReviewService:
             async def _run_one(agent_cls, agent_name: str, category: str) -> list[dict[str, Any]]:
                 agent = agent_cls()
                 logger.info("Agent 开始", review_id=review.id, agent=agent_name)
+                await progress_emitter.emit(review.id, "agent_started", {"agent": agent_name})
                 findings = await agent.analyze(
                     project_path=project.path,
                     file_paths=file_paths,
                 )
                 logger.info("Agent 完成", review_id=review.id, agent=agent_name, count=len(findings))
+                await progress_emitter.emit(review.id, "agent_completed", {
+                    "agent": agent_name, "findings": len(findings),
+                })
                 return findings
 
             results = await asyncio.gather(
@@ -124,6 +154,8 @@ class ReviewService:
             review.suggestion_count = sum(1 for f in all_findings if f.severity == "suggestion")
             review.nitpick_count = sum(1 for f in all_findings if f.severity == "nitpick")
             review.summary = self._generate_summary(review)
+            review.health_score_snapshot = compute_health_score(review, all_findings)
+            project.health_score = review.health_score_snapshot
 
             await self.db.flush()
             logger.info(
@@ -132,7 +164,18 @@ class ReviewService:
                 findings=review.total_findings,
                 duration=f"{elapsed}s",
                 agents=[a[1] for a in agents],
+                health_score=review.health_score_snapshot,
             )
+            await progress_emitter.emit(review.id, "review_completed", {
+                "total_findings": review.total_findings,
+                "critical": review.critical_count,
+                "warning": review.warning_count,
+                "suggestion": review.suggestion_count,
+                "nitpick": review.nitpick_count,
+                "health_score": review.health_score_snapshot,
+                "duration_seconds": elapsed,
+                "summary": review.summary,
+            })
 
         except Exception as e:
             review.status = "failed"
@@ -141,6 +184,7 @@ class ReviewService:
             review.summary = f"审查失败: {e}"
             await self.db.flush()
             logger.error("审查失败", review_id=review.id, error=str(e))
+            await progress_emitter.emit(review.id, "review_failed", {"error": str(e)})
             raise
 
         return review
