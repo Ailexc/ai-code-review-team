@@ -1,6 +1,6 @@
 # 项目进度 Check List
 
-> 最后更新：2026-08-20（Day 1 + Day 2 + Day 3 部分）
+> 最后更新：2026-08-21
 
 ## Day 1 MVP（基础框架）✅ 全部完成
 
@@ -45,17 +45,22 @@
 
 ---
 
-## Day 3（CrewAI + 安全审查）🔶 进行中 ~60%
+## Day 3（CrewAI + 安全审查）✅ 大部分完成 ~95%
 
 ### ✅ 已完成
 
 - [x] CrewAI 环境配置（容器内已安装 crewai + semgrep）
-- [x] 安全审查 Agent（`agents/security_agent.py`）— Semgrep 静态分析
+- [x] 安全审查 Agent（`agents/security_agent.py`）— Semgrep 静态分析 + LLM 智能分析
 - [x] 审查服务层（`services/review_service.py`）— 编排 Agent 执行
 - [x] 审查触发 API（`POST /reviews/run?project_id=xxx&review_type=security`）
 - [x] 审查结果入库（Finding 模型，含 severity / file_path / suggestion 等）
 - [x] 审查结果摘要生成（自动统计 critical/warning/suggestion 数量）
 - [x] 前端安全审查按钮（项目详情页一键触发）
+- [x] 审查报告生成器（`services/report_generator.py`）— Markdown 格式
+- [x] 审查报告下载 API（`GET /reviews/{id}/report`）
+- [x] 前端审查详情页（Finding 列表展示）
+- [x] 前端审查列表页（可点击进入详情）
+- [x] LLM 智能分析集成（安全 Agent 调用 LLM 做语义分析）
 
 ### LLM 模型配置（额外完成）
 
@@ -68,18 +73,16 @@
 
 ### ❌ 未完成
 
-- [ ] LLM 智能分析集成（安全 Agent 调用 LLM 做语义分析，需配置 API Key）
-- [ ] ReviewFlow 骨架（CrewAI Flows + Crews 双层架构）
-- [ ] 审查报告生成（Markdown 格式）
-- [ ] 前端审查结果展示（Finding 列表页）
+- [ ] ReviewFlow 骨架（CrewAI Flows + Crews 双层架构）— 可选，当前直接调用 Agent 已可用
 
 ---
 
-## Day 4-5（报告 + 联调）❌ 未开始
+## Day 4-5（报告 + 联调）🔶 进行中 ~70%
 
-- [ ] Markdown 报告生成
-- [ ] 前端 Finding 列表展示（严重程度 / 代码片段 / 修复建议）
-- [ ] 审查详情页完善（审查概览 + 发现列表 + 报告）
+- [x] Markdown 报告生成 ✅
+- [x] 前端 Finding 列表展示（严重程度 / 代码片段 / 修复建议）✅
+- [x] 审查详情页完善（审查概览 + 发现列表 + 报告）✅
+- [x] 审查报告下载功能 ✅
 - [ ] 前后端联调
 - [ ] 集成测试
 
@@ -96,9 +99,9 @@
 
 ## 待解决
 
-1. LLM API Key 未配置 — 需在模型配置页面添加
+1. ~~LLM API Key 未配置~~ ✅ 已配置 MIMO 模型
 2. Semgrep 在容器内需要首次下载规则（可能较慢）
-3. 审查结果前端展示待完善
+3. ~~审查结果前端展示待完善~~ ✅ 已完成
 
 ---
 
