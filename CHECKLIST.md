@@ -1,6 +1,6 @@
 # 项目进度 Check List
 
-> 最后更新：2026-08-21（Phase A-E 完成，72 测试）
+> 最后更新：2026-08-21（V1.0-V7.0 全阶段完成，72 测试，4 Agent 并行 + 实时进度 + 增量审查）
 
 ## Day 1 MVP（基础框架）✅ 全部完成
 
@@ -45,7 +45,7 @@
 
 ---
 
-## Day 3（CrewAI + 安全审查）✅ 大部分完成 ~95%
+## Day 3（CrewAI + 安全审查）✅ 全部完成
 
 ### ✅ 已完成
 
@@ -71,9 +71,9 @@
 - [x] API Key 加密存储（前端只显示"已设置/未设置"）
 - [x] 一键测试连接（显示延迟和模型回复）
 
-### ❌ 未完成
+### ReviewFlow（CrewAI Flows 双层架构）
 
-- [x] ReviewFlow 骨架（CrewAI Flows 双层架构）✅ `app/flows/review_flow.py` — 白盒编排 parse→dispatch→run→aggregate→report
+- [x] ReviewFlow 骨架（`app/flows/review_flow.py`）— 白盒编排 parse→dispatch→run→aggregate→report（Phase B 完成）
 
 ---
 
@@ -84,7 +84,7 @@
 - [x] 审查详情页完善（审查概览 + 发现列表 + 报告）✅
 - [x] 审查报告下载功能 ✅
 - [x] 前后端联调 ✅ — 全链路验证（触发→审查→结果→报告，真实跑通 15 findings/89s）
-- [x] 集成测试 ✅ — `backend/tests/` 43 个用例全过（pytest+httpx 覆盖项目/触发器/审查/报告/模型配置/统计/Flow）
+- [x] 集成测试 ✅ — `backend/tests/` 72 个用例全过（pytest+httpx 覆盖项目/触发器/审查/报告/模型配置/统计/Flow/健康度/进度/增量审查）
 
 ---
 
@@ -116,7 +116,10 @@
 |----------|----------|------|------|
 | security | 15（7 严重/7 警告/1 建议） | 89s | Semgrep + LLM 语义分析 |
 | code_style | 4（2 警告/1 建议/1 细节） | 140s | Ruff + LLM 规范点评 |
-| full | 见下方后台验证 | - | security + code_style 并行 |
+| full | 16（2 严重/10 警告/2 建议/2 细节） | 178s | security + code_style 并行聚合去重 |
+| dependency | 4（2 警告/2 建议） | 112s | pip-audit + npm registry + LLM |
+| test_coverage | 44（2 警告/42 建议） | 74s | AST 未测试函数 + LLM 建议 |
+| incremental | 2（1 严重） | 46s | Git diff 增量，仅审查变更文件 |
 
 ---
 
@@ -192,7 +195,7 @@
 2. ~~Semgrep 首次下载规则较慢~~ ✅ 规则已缓存，后续扫描正常
 3. ~~审查结果前端展示待完善~~ ✅ 已完成
 4. LLM 为推理模型，单文件分析 ~40s（已通过并发优化，多文件并行）
-5. 后续阶段：~~依赖审查 + 测试覆盖（V4.0）~~ ✅；~~实时进度 + 健康度（V5.0）~~ ✅；增量审查 + 优化（V6.0-V7.0）
+5. 后续阶段：~~依赖审查 + 测试覆盖（V4.0）~~ ✅；~~实时进度 + 健康度（V5.0）~~ ✅；~~增量审查 + 优化（V6.0-V7.0）~~ ✅ 完成
 
 ---
 
