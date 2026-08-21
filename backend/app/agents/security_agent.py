@@ -118,105 +118,116 @@ class SecurityAgent(BaseAgent):
         path: Path,
         file_paths: list[str] | None = None,
     ) -> list[dict[str, Any]]:
-        """使用 LLM 进行智能安全分析"""
+        """使用 LLM 进行智能安全分析（并发调用，限制并发数避免过慢）"""
         try:
+            import asyncio
+
             from app.models.llm_config import LLMConfig
             from app.core.database import async_session_factory
             from sqlalchemy import select
             import httpx
 
-            # 获取默认 LLM 配置
+            # 1. 获取 LLM 配置：优先启用且为默认且有 Key 的，否则退回到任一启用且有 Key 的
             async with async_session_factory() as db:
                 result = await db.execute(
-                    select(LLMConfig).where(
+                    select(LLMConfig)
+                    .where(
                         LLMConfig.is_enabled == True,
-                        LLMConfig.is_default == True,
                         LLMConfig.api_key.isnot(None)
                     )
+                    .order_by(LLMConfig.is_default.desc())
                 )
-                llm_config = result.scalar_one_or_none()
+                llm_config = result.scalars().first()
 
-                if not llm_config:
-                    logger.info("未找到有效的 LLM 配置，跳过 LLM 分析")
+            if not llm_config:
+                logger.info("未找到有效的 LLM 配置，跳过 LLM 分析")
+                return []
+
+            # 2. 收集要分析的文件（最多 5 个，每个截断到 5000 字符）
+            files_to_analyze = []
+            if file_paths:
+                for fp in file_paths[:5]:
+                    full_path = path / fp
+                    if full_path.exists() and full_path.suffix in ('.py', '.js', '.ts', '.tsx', '.jsx'):
+                        files_to_analyze.append((fp, full_path.read_text(errors='ignore')[:5000]))
+            else:
+                for ext in ('*.py', '*.js', '*.ts'):
+                    for f in list(path.rglob(ext))[:10]:
+                        if '/node_modules/' not in str(f) and '/__pycache__/' not in str(f):
+                            rel_path = str(f.relative_to(path))
+                            content = f.read_text(errors='ignore')[:5000]
+                            files_to_analyze.append((rel_path, content))
+                            if len(files_to_analyze) >= 5:
+                                break
+                    if len(files_to_analyze) >= 5:
+                        break
+
+            if not files_to_analyze:
+                return []
+
+            # 3. 并发调用 LLM（限制并发 3，避免 API 限流）
+            base_url = llm_config.base_url or "https://api.xiaomimimo.com/v1"
+            headers = {
+                "Authorization": f"Bearer {llm_config.api_key}",
+                "Content-Type": "application/json",
+            }
+            max_tokens = min(llm_config.max_tokens, 4096)
+
+            async def _analyze_one(file_path: str, content: str) -> list[dict[str, Any]]:
+                prompt = SECURITY_PROMPT.format(file_path=file_path, code_content=content)
+                try:
+                    async with httpx.AsyncClient(timeout=90) as client:
+                        resp = await client.post(
+                            f"{base_url}/chat/completions",
+                            headers=headers,
+                            json={
+                                "model": llm_config.model,
+                                "messages": [{"role": "user", "content": prompt}],
+                                "max_tokens": max_tokens,
+                                "temperature": llm_config.temperature,
+                            },
+                        )
+                    if resp.status_code != 200:
+                        logger.warning("LLM API 调用失败", status=resp.status_code, file=file_path)
+                        return []
+
+                    reply = resp.json().get("choices", [{}])[0].get("message", {}).get("content", "")
+                    json_start = reply.find('{')
+                    json_end = reply.rfind('}') + 1
+                    if json_start < 0 or json_end <= json_start:
+                        logger.warning("LLM 返回内容不含 JSON", file=file_path)
+                        return []
+
+                    result_data = json.loads(reply[json_start:json_end])
+                    return [{
+                        "rule_id": f.get("rule_id", "LLM-SEC"),
+                        "severity": f.get("severity", "warning"),
+                        "message": f.get("message", ""),
+                        "file_path": f.get("file_path", file_path),
+                        "line_start": f.get("line_number"),
+                        "code_snippet": f.get("code_snippet", "")[:500],
+                        "suggestion": f.get("suggestion", ""),
+                    } for f in result_data.get("findings", [])]
+                except json.JSONDecodeError:
+                    logger.warning("LLM 返回的 JSON 解析失败", file=file_path)
+                    return []
+                except Exception as e:
+                    logger.warning("LLM 分析单个文件失败", file=file_path, error=str(e))
                     return []
 
-                # 收集要分析的文件
-                files_to_analyze = []
-                if file_paths:
-                    for fp in file_paths[:5]:  # 限制数量避免 token 过多
-                        full_path = path / fp
-                        if full_path.exists() and full_path.suffix in ('.py', '.js', '.ts', '.tsx', '.jsx'):
-                            files_to_analyze.append((fp, full_path.read_text(errors='ignore')[:5000]))
-                else:
-                    # 扫描主要代码文件
-                    for ext in ('*.py', '*.js', '*.ts'):
-                        for f in path.rglob(ext)[:10]:  # 限制数量
-                            if '/node_modules/' not in str(f) and '/__pycache__/' not in str(f):
-                                rel_path = str(f.relative_to(path))
-                                content = f.read_text(errors='ignore')[:5000]
-                                files_to_analyze.append((rel_path, content))
-                                if len(files_to_analyze) >= 5:
-                                    break
-                        if len(files_to_analyze) >= 5:
-                            break
+            sem = asyncio.Semaphore(3)
 
-                if not files_to_analyze:
-                    return []
+            async def _bounded(file_path: str, content: str) -> list[dict[str, Any]]:
+                async with sem:
+                    return await _analyze_one(file_path, content)
 
-                # 调用 LLM 分析
-                findings = []
-                base_url = llm_config.base_url or "https://api.xiaomimimo.com/v1"
+            results = await asyncio.gather(
+                *[_bounded(fp, content) for fp, content in files_to_analyze]
+            )
+            findings = [f for sublist in results for f in sublist]
 
-                async with httpx.AsyncClient(timeout=60) as client:
-                    for file_path, content in files_to_analyze:
-                        prompt = SECURITY_PROMPT.format(file_path=file_path, code_content=content)
-
-                        try:
-                            resp = await client.post(
-                                f"{base_url}/chat/completions",
-                                headers={
-                                    "Authorization": f"Bearer {llm_config.api_key}",
-                                    "Content-Type": "application/json"
-                                },
-                                json={
-                                    "model": llm_config.model,
-                                    "messages": [{"role": "user", "content": prompt}],
-                                    "max_tokens": min(llm_config.max_tokens, 4096),
-                                    "temperature": llm_config.temperature,
-                                },
-                            )
-
-                            if resp.status_code == 200:
-                                data = resp.json()
-                                reply = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-
-                                # 解析 JSON 结果
-                                try:
-                                    # 提取 JSON 部分
-                                    json_start = reply.find('{')
-                                    json_end = reply.rfind('}') + 1
-                                    if json_start >= 0 and json_end > json_start:
-                                        result_data = json.loads(reply[json_start:json_end])
-                                        for finding in result_data.get("findings", []):
-                                            findings.append({
-                                                "rule_id": finding.get("rule_id", "LLM-SEC"),
-                                                "severity": finding.get("severity", "warning"),
-                                                "message": finding.get("message", ""),
-                                                "file_path": finding.get("file_path", file_path),
-                                                "line_start": finding.get("line_number"),
-                                                "code_snippet": finding.get("code_snippet", "")[:500],
-                                                "suggestion": finding.get("suggestion", ""),
-                                            })
-                                except json.JSONDecodeError:
-                                    logger.warning("LLM 返回的 JSON 解析失败", file=file_path)
-                            else:
-                                logger.warning("LLM API 调用失败", status=resp.status_code, file=file_path)
-
-                        except Exception as e:
-                            logger.warning("LLM 分析单个文件失败", file=file_path, error=str(e))
-
-                logger.info("LLM 分析完成", files=len(files_to_analyze), findings=len(findings))
-                return findings
+            logger.info("LLM 分析完成", files=len(files_to_analyze), findings=len(findings))
+            return findings
 
         except ImportError:
             logger.info("数据库模块不可用，跳过 LLM 分析")
@@ -270,26 +281,51 @@ class SecurityAgent(BaseAgent):
         except json.JSONDecodeError:
             return []
 
-        return self._parse_results(data)
+        return self._parse_results(path, data)
 
-    def _parse_results(self, data: dict) -> list[dict[str, Any]]:
+    def _parse_results(self, path: Path, data: dict) -> list[dict[str, Any]]:
         """解析 Semgrep JSON 输出"""
         findings = []
         for result in data.get("results", []):
             severity_raw = result.get("extra", {}).get("severity", "WARNING")
             severity = SEVERITY_MAP.get(severity_raw, "warning")
 
+            file_path = result.get("path", "")
+            line_start = result.get("start", {}).get("line")
+
+            # Semgrep 的 extra.lines 不可靠（可能返回占位符），优先从源文件按行号读取真实代码
+            snippet = result.get("extra", {}).get("lines", "") or ""
+            if not snippet.strip() or snippet.strip().lower() in ("requires login", "n/a"):
+                snippet = self._extract_code_snippet(path, file_path, line_start)
+
             findings.append({
                 "rule_id": result.get("check_id", ""),
                 "severity": severity,
                 "message": result.get("extra", {}).get("message", ""),
-                "file_path": result.get("path", ""),
-                "line_start": result.get("start", {}).get("line"),
+                "file_path": file_path,
+                "line_start": line_start,
                 "line_end": result.get("end", {}).get("line"),
-                "code_snippet": result.get("extra", {}).get("lines", "")[:500],
+                "code_snippet": snippet[:500],
                 "suggestion": result.get("extra", {}).get("fix", "") or result.get("extra", {}).get("metadata", {}).get("fix", ""),
             })
         return findings
+
+    def _extract_code_snippet(self, path: Path, file_path: str, line_start: int | None) -> str:
+        """从源文件读取问题行附近的代码片段（Semgrep lines 字段不可靠时的兜底）"""
+        if not line_start:
+            return ""
+        try:
+            full = Path(file_path) if Path(file_path).is_absolute() else path / file_path
+            if not full.exists():
+                return ""
+            lines = full.read_text(errors="ignore").splitlines()
+            if not lines:
+                return ""
+            start = max(1, line_start - 1)
+            end = min(len(lines), line_start + 3)
+            return "\n".join(lines[start - 1:end])
+        except Exception:
+            return ""
 
     def _detect_language(self, path: Path) -> str:
         """检测项目主要语言"""

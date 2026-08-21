@@ -1,15 +1,19 @@
 import { useState, useEffect } from 'react';
-import { Card, Button, Upload, Input, Select, message, List, Tag, Space, Typography, Tabs } from 'antd';
-import { UploadOutlined, FolderOpenOutlined, FileTextOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { Card, Button, Upload, Input, Select, message, List, Tag, Space, Typography, Tabs, Radio } from 'antd';
+import { UploadOutlined, FolderOpenOutlined, FileTextOutlined, ThunderboltOutlined, PlayCircleOutlined } from '@ant-design/icons';
+import { useNavigate } from 'react-router-dom';
 import { triggerApi, TriggerResult, TriggerTypeInfo } from '@/api/triggerApi';
 import { projectApi, Project } from '@/api/projectApi';
 
 export default function ReviewTrigger() {
+  const navigate = useNavigate();
   const [triggerTypes, setTriggerTypes] = useState<TriggerTypeInfo[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [result, setResult] = useState<TriggerResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [selectedProject, setSelectedProject] = useState<string | undefined>();
+  const [reviewType, setReviewType] = useState('security');
+  const [reviewLoading, setReviewLoading] = useState(false);
 
   // 粘贴代码
   const [code, setCode] = useState('');
@@ -39,6 +43,23 @@ export default function ReviewTrigger() {
       message.error('扫描失败');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRunReview = async () => {
+    if (!selectedProject) {
+      message.warning('请先选择一个项目');
+      return;
+    }
+    setReviewLoading(true);
+    try {
+      const res = await triggerApi.runReview(selectedProject, reviewType);
+      message.success(`审查完成，发现 ${res.total_findings} 个问题`);
+      navigate(`/reviews/${res.id}`);
+    } catch {
+      message.error('审查失败');
+    } finally {
+      setReviewLoading(false);
     }
   };
 
@@ -77,6 +98,12 @@ export default function ReviewTrigger() {
     return false; // 阻止 antd 默认上传
   };
 
+  const reviewTypeOptions = [
+    { label: '综合审查 (full)', value: 'full' },
+    { label: '安全审查 (security)', value: 'security' },
+    { label: '规范审查 (code_style)', value: 'code_style' },
+  ];
+
   const tabItems = [
     {
       key: 'directory',
@@ -86,12 +113,34 @@ export default function ReviewTrigger() {
           <Select
             placeholder="选择项目"
             style={{ width: '100%' }}
-            onChange={setSelectedProject}
+            onChange={(v) => setSelectedProject(v)}
             options={projects.map(p => ({ label: `${p.name} (${p.path})`, value: p.id }))}
           />
           <Button type="primary" icon={<ThunderboltOutlined />} loading={loading} onClick={handleLocalDirectory} block>
             扫描项目目录
           </Button>
+          {result && result.success && (
+            <Card size="small" title={`扫描到 ${result.file_count} 个文件`}>
+              <Radio.Group
+                value={reviewType}
+                onChange={(e) => setReviewType(e.target.value)}
+                optionType="button"
+                buttonStyle="solid"
+                style={{ marginBottom: 12 }}
+                options={reviewTypeOptions}
+              />
+              <Button
+                type="primary"
+                icon={<PlayCircleOutlined />}
+                loading={reviewLoading}
+                onClick={handleRunReview}
+                block
+              >
+                开始审查
+              </Button>
+            </Card>
+          )}
+          {result && result.error && <Typography.Text type="danger">{result.error}</Typography.Text>}
         </Space>
       ),
     },
@@ -141,28 +190,16 @@ export default function ReviewTrigger() {
         <Tabs items={tabItems} />
       </Card>
 
-      {result && (
-        <Card title="扫描结果">
-          <Space direction="vertical" style={{ width: '100%' }}>
-            <p>
-              <strong>触发器：</strong>
-              <Tag color="blue">{result.trigger_type}</Tag>
-              <strong>状态：</strong>
-              {result.success ? <Tag color="green">成功</Tag> : <Tag color="red">失败</Tag>}
-              <strong>文件数：</strong>{result.file_count}
-            </p>
-            {result.error && <Typography.Text type="danger">{result.error}</Typography.Text>}
-            {result.files.length > 0 && (
-              <List
-                size="small"
-                bordered
-                dataSource={result.files.slice(0, 30)}
-                renderItem={(file) => <List.Item>{file}</List.Item>}
-                style={{ maxHeight: 400, overflow: 'auto' }}
-              />
-            )}
-            {result.file_count > 30 && <p style={{ color: '#999' }}>...及其他 {result.file_count - 30} 个文件</p>}
-          </Space>
+      {result && result.files.length > 0 && (
+        <Card title="扫描结果文件列表">
+          <List
+            size="small"
+            bordered
+            dataSource={result.files.slice(0, 30)}
+            renderItem={(file) => <List.Item>{file}</List.Item>}
+            style={{ maxHeight: 400, overflow: 'auto' }}
+          />
+          {result.file_count > 30 && <p style={{ color: '#999' }}>...及其他 {result.file_count - 30} 个文件</p>}
         </Card>
       )}
     </div>
