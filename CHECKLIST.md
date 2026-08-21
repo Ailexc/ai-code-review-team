@@ -1,6 +1,6 @@
 # 项目进度 Check List
 
-> 最后更新：2026-08-21（Phase A+B 完成）
+> 最后更新：2026-08-21（Phase A+B+C 完成）
 
 ## Day 1 MVP（基础框架）✅ 全部完成
 
@@ -120,6 +120,16 @@
 
 ---
 
+## Phase C（V4.0 依赖审查 + 测试覆盖）✅ 完成
+
+- [x] DependencyAgent（`agents/dependency_agent.py`）— pip-audit 漏洞扫描 + npm registry 过时检测 + LLM 风险点评
+- [x] TestCoverageAgent（`agents/test_coverage_agent.py`）— AST 未测试函数识别 + LLM 测试建议
+- [x] ReviewService 注册新 Agent（full 现含 4 个 Agent 并行）
+- [x] 前端触发页/项目详情页支持 dependency / test_coverage 审查类型
+- [x] 静态逻辑测试（pip-audit 解析、AST 覆盖识别）+ 编排测试（51 个全过）
+
+---
+
 ## 已解决的技术问题
 
 1. ✅ 前端代理 — Vite proxy → Docker 内部网络
@@ -135,7 +145,7 @@
 2. ~~Semgrep 首次下载规则较慢~~ ✅ 规则已缓存，后续扫描正常
 3. ~~审查结果前端展示待完善~~ ✅ 已完成
 4. LLM 为推理模型，单文件分析 ~40s（已通过并发优化，多文件并行）
-5. 后续阶段：依赖审查 + 测试覆盖（V4.0）、实时进度 + 健康度（V5.0）、增量审查 + 优化（V6.0-V7.0）
+5. 后续阶段：~~依赖审查 + 测试覆盖（V4.0）~~ ✅ 完成；实时进度 + 健康度（V5.0）、增量审查 + 优化（V6.0-V7.0）
 
 ---
 

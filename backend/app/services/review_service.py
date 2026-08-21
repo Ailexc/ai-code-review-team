@@ -15,13 +15,17 @@ from app.models.finding import Finding
 from app.models.project import Project
 from app.agents.security_agent import SecurityAgent
 from app.agents.code_style_agent import CodeStyleAgent
+from app.agents.dependency_agent import DependencyAgent
+from app.agents.test_coverage_agent import TestCoverageAgent
 
 logger = structlog.get_logger()
 
-# Agent 注册表：review_type 片段 → (Agent 实例, agent_name, category)
+# Agent 注册表：review_type 片段 → (Agent 类, agent_name, category)
 AGENT_REGISTRY = {
     "security": (SecurityAgent, "security", "security"),
     "code_style": (CodeStyleAgent, "code_style", "code_style"),
+    "dependency": (DependencyAgent, "dependency", "dependency"),
+    "test_coverage": (TestCoverageAgent, "test_coverage", "test_coverage"),
 }
 
 

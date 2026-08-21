@@ -100,6 +100,8 @@ export default function ReviewTrigger() {
     { label: '综合审查 (full)', value: 'full' },
     { label: '安全审查 (security)', value: 'security' },
     { label: '规范审查 (code_style)', value: 'code_style' },
+    { label: '依赖审查 (dependency)', value: 'dependency' },
+    { label: '测试覆盖 (test_coverage)', value: 'test_coverage' },
   ];
 
   const tabItems = [

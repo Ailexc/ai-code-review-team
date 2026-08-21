@@ -1,0 +1,261 @@
+"""依赖审查 Agent — 依赖解析 + 漏洞扫描 + LLM 风险点评
+
+确定性工具层：
+- Python: pip-audit（查询 PyPI/OSV 漏洞库）
+- JS:    npm registry API 查询（比对声明版本与最新版本，识别过时依赖）
+LLM 补充：分析依赖清单，识别风险/弃用/过时/许可证问题。
+"""
+
+import json
+import subprocess
+import tomllib
+from pathlib import Path
+from typing import Any
+
+import httpx
+import structlog
+
+from app.agents.base import BaseAgent
+from app.agents.utils import extract_code_snippet
+
+logger = structlog.get_logger()
+
+# 漏洞严重程度映射（pip-audit 的 severity / CVE 评分近似）
+SEVERITY_BY_CVE_SCORE = [
+    (9.0, "critical"),
+    (7.0, "warning"),
+    (4.0, "suggestion"),
+]
+DEFAULT_VULN_SEVERITY = "warning"
+
+# 依赖文件清单
+MANIFEST_FILES = {
+    "python": ["requirements.txt", "pyproject.toml", "setup.py", "Pipfile"],
+    "javascript": ["package.json"],
+}
+
+DEPENDENCY_PROMPT = """你是一个依赖管理专家。请分析以下项目的依赖清单，识别风险。
+
+依赖清单内容:
+```
+{manifest}
+```
+
+请用 JSON 格式返回分析结果：
+```json
+{{
+    "findings": [
+        {{
+            "rule_id": "DEP-001",
+            "severity": "warning/suggestion",
+            "message": "简短描述问题",
+            "file_path": "依赖文件路径",
+            "line_number": 行号或null,
+            "code_snippet": "相关依赖行",
+            "suggestion": "改进建议"
+        }}
+    ]
+}}
+```
+
+审查重点:
+1. 已知有漏洞历史的包（如旧版 django/flask/requests/lodash/axios 等）
+2. 过时或长期未维护的包（建议升级到最新稳定版）
+3. 冗余或冲突的依赖
+4. 缺少版本约束（如未固定版本）的包
+5. 不安全的许可证或来源不明的包
+
+注意:
+1. 只返回 JSON，不要有其他内容
+2. 没有问题返回空数组: {{"findings": []}}
+3. severity 分为: warning (需要处理), suggestion (建议)"""
+
+
+class DependencyAgent(BaseAgent):
+    """依赖审查 Agent"""
+
+    name = "dependency"
+    description = "依赖审查（pip-audit 漏洞扫描 + npm registry 过时检测 + LLM 风险点评）"
+
+    async def analyze(
+        self,
+        project_path: str,
+        file_paths: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        path = Path(project_path)
+        if not path.exists():
+            logger.warning("项目路径不存在", path=project_path)
+            return []
+
+        findings: list[dict[str, Any]] = []
+
+        # 1. Python 依赖：pip-audit
+        py_findings = await self._run_pip_audit(path)
+        findings.extend(py_findings)
+
+        # 2. JS 依赖：npm registry 过时检测
+        js_findings = await self._check_npm_outdated(path)
+        findings.extend(js_findings)
+
+        # 3. LLM 依赖风险点评
+        try:
+            llm_findings = await self._run_llm_analysis(path)
+            findings.extend(llm_findings)
+        except Exception as e:
+            logger.warning("LLM 依赖分析失败，回退到工具结果", error=str(e))
+
+        # 去重
+        seen = set()
+        unique = []
+        for f in findings:
+            key = (f.get("rule_id"), f.get("file_path"), f.get("line_start"))
+            if key not in seen:
+                seen.add(key)
+                unique.append(f)
+
+        logger.info("依赖扫描完成", path=project_path, findings=len(unique))
+        return unique
+
+    async def _run_pip_audit(self, path: Path) -> list[dict[str, Any]]:
+        """运行 pip-audit 扫描 Python 依赖漏洞"""
+        requirements = path / "requirements.txt"
+        pyproject = path / "pyproject.toml"
+
+        cmd = ["pip-audit", "-f", "json"]
+        if requirements.exists():
+            cmd += ["-r", str(requirements)]
+        elif pyproject.exists():
+            # pip-audit 不直接支持 pyproject，先尝试 requirements.txt
+            return []
+        else:
+            return []
+
+        try:
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=120, cwd=str(path)
+            )
+        except subprocess.TimeoutExpired:
+            logger.warning("pip-audit 超时")
+            return []
+        except FileNotFoundError:
+            logger.error("pip-audit 命令未找到")
+            return []
+
+        if result.returncode not in (0, 1):  # 0=无漏洞 1=有漏洞
+            logger.warning("pip-audit 异常退出", code=result.returncode, stderr=result.stderr[:300])
+            return []
+
+        try:
+            data = json.loads(result.stdout)
+        except json.JSONDecodeError:
+            return []
+
+        return self._parse_pip_audit(path, data)
+
+    def _parse_pip_audit(self, path: Path, data: dict) -> list[dict[str, Any]]:
+        """解析 pip-audit JSON 输出"""
+        findings = []
+        for dep in data.get("dependencies", []):
+            name = dep.get("name", "")
+            version = dep.get("version", "")
+            for vuln in dep.get("vulns", []):
+                vuln_id = vuln.get("id", "")
+                desc = vuln.get("description", "")[:200]
+                fix_versions = ", ".join(vuln.get("fix_versions", []))
+                severity = self._score_to_severity(vuln.get("cve", {}).get("cvss_score"))
+
+                findings.append({
+                    "rule_id": f"PIP-AUDIT-{vuln_id}",
+                    "severity": severity,
+                    "message": f"{name}=={version} 存在漏洞 {vuln_id}: {desc}",
+                    "file_path": str(path / "requirements.txt"),
+                    "line_start": None,
+                    "code_snippet": f"{name}=={version}",
+                    "suggestion": f"升级 {name} 到修复版本: {fix_versions}" if fix_versions else f"参考 {vuln_id} 公告处理",
+                })
+        return findings
+
+    async def _check_npm_outdated(self, path: Path) -> list[dict[str, Any]]:
+        """查询 npm registry 检测 JS 过时依赖"""
+        pkg_json = path / "package.json"
+        if not pkg_json.exists():
+            return []
+
+        try:
+            data = json.loads(pkg_json.read_text(errors="ignore"))
+        except json.JSONDecodeError:
+            return []
+
+        deps = {**(data.get("dependencies") or {}), **(data.get("devDependencies") or {})}
+        if not deps:
+            return []
+
+        findings = []
+        sem = __import__("asyncio").Semaphore(5)
+
+        async def _check_one(name: str, declared: str):
+            declared_clean = declared.lstrip("^~>=<")
+            async with sem:
+                try:
+                    async with httpx.AsyncClient(timeout=15) as client:
+                        resp = await client.get(f"https://registry.npmjs.org/{name}")
+                    if resp.status_code != 200:
+                        return None
+                    pkg = resp.json()
+                    latest = pkg.get("dist-tags", {}).get("latest", "")
+                    if latest and latest != declared_clean:
+                        return {
+                            "rule_id": f"NPM-OUTDATED-{name}",
+                            "severity": "suggestion",
+                            "message": f"{name}@{declared} 过时，最新版本 {latest}",
+                            "file_path": str(pkg_json),
+                            "line_start": None,
+                            "code_snippet": f'"{name}": "{declared}"',
+                            "suggestion": f'更新 {name} 到 {latest}',
+                        }
+                except Exception:
+                    return None
+            return None
+
+        import asyncio
+        results = await asyncio.gather(*[_check_one(n, v) for n, v in list(deps.items())[:20]])
+        for r in results:
+            if r:
+                findings.append(r)
+
+        return findings
+
+    def _score_to_severity(self, score: float | None) -> str:
+        if score is None:
+            return DEFAULT_VULN_SEVERITY
+        for threshold, sev in SEVERITY_BY_CVE_SCORE:
+            if score >= threshold:
+                return sev
+        return "suggestion"
+
+    async def _run_llm_analysis(self, path: Path) -> list[dict[str, Any]]:
+        """LLM 依赖风险点评"""
+        try:
+            from app.agents.llm_client import get_active_llm_config, run_llm_analysis
+
+            config = await get_active_llm_config()
+            if not config:
+                return []
+
+            manifest = self._collect_manifest(path)
+            if not manifest:
+                return []
+
+            prompts = [(fp, DEPENDENCY_PROMPT.format(manifest=content)) for fp, content in manifest]
+            return await run_llm_analysis(config, prompts, default_rule="LLM-DEP")
+        except ImportError:
+            return []
+
+    def _collect_manifest(self, path: Path) -> list[tuple[str, str]]:
+        """收集依赖清单文件内容（用于 LLM 分析）"""
+        result = []
+        for name in ("requirements.txt", "pyproject.toml", "package.json"):
+            f = path / name
+            if f.exists():
+                result.append((name, f.read_text(errors="ignore")[:4000]))
+        return result

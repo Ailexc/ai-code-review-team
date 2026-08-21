@@ -166,6 +166,50 @@ async def test_run_full_review_runs_both_agents(client):
 
 
 @pytest.mark.asyncio
+async def test_run_dependency_review(client):
+    project_id = await _create_project(client)
+
+    class FakeDepAgent:
+        async def analyze(self, project_path, file_paths=None):
+            return [{"rule_id": "DEP-1", "severity": "warning", "message": "requests 过时", "file_path": "requirements.txt", "line_start": 1}]
+
+    with patch.dict(
+        "app.services.review_service.AGENT_REGISTRY",
+        {"dependency": (FakeDepAgent, "dependency", "dependency")},
+    ):
+        resp = await client.post(
+            "/api/v1/reviews/run",
+            params={"project_id": project_id, "review_type": "dependency"},
+        )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["review_type"] == "dependency"
+    assert data["total_findings"] == 1
+
+
+@pytest.mark.asyncio
+async def test_run_test_coverage_review(client):
+    project_id = await _create_project(client)
+
+    class FakeCovAgent:
+        async def analyze(self, project_path, file_paths=None):
+            return [{"rule_id": "TEST-1", "severity": "suggestion", "message": "函数未测试", "file_path": "app.py", "line_start": 5}]
+
+    with patch.dict(
+        "app.services.review_service.AGENT_REGISTRY",
+        {"test_coverage": (FakeCovAgent, "test_coverage", "test_coverage")},
+    ):
+        resp = await client.post(
+            "/api/v1/reviews/run",
+            params={"project_id": project_id, "review_type": "test_coverage"},
+        )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["review_type"] == "test_coverage"
+    assert data["total_findings"] == 1
+
+
+@pytest.mark.asyncio
 async def test_run_review_project_not_found(client):
     resp = await client.post("/api/v1/reviews/run", params={"project_id": "nonexistent"})
     assert resp.status_code == 404

@@ -18,6 +18,8 @@ SEVERITY_LABELS = {
 AGENT_LABELS = {
     "security": "安全审查",
     "code_style": "代码规范",
+    "dependency": "依赖审查",
+    "test_coverage": "测试覆盖",
 }
 
 

@@ -73,7 +73,11 @@ export default function ProjectDetail() {
     try {
       const result = await triggerApi.runReview(project.id, reviewType);
       setReviewResult(result);
-      const typeLabel = reviewType === 'full' ? '综合' : reviewType === 'code_style' ? '规范' : '安全';
+      const typeLabels: Record<string, string> = {
+        full: '综合', security: '安全', code_style: '规范',
+        dependency: '依赖', test_coverage: '测试覆盖',
+      };
+      const typeLabel = typeLabels[reviewType] || reviewType;
       message.success(`${typeLabel}审查完成，发现 ${result.total_findings} 个问题`);
       fetchProject(); // 刷新项目数据（健康度可能更新）
     } catch {
@@ -109,11 +113,13 @@ export default function ProjectDetail() {
           <Select
             value={reviewType}
             onChange={setReviewType}
-            style={{ width: 130 }}
+            style={{ width: 150 }}
             options={[
               { label: '综合审查', value: 'full' },
               { label: '安全审查', value: 'security' },
               { label: '规范审查', value: 'code_style' },
+              { label: '依赖审查', value: 'dependency' },
+              { label: '测试覆盖', value: 'test_coverage' },
             ]}
           />
           <Button type="primary" icon={<SafetyOutlined />} loading={reviewLoading} onClick={handleRunReview}>开始审查</Button>
