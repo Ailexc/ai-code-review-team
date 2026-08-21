@@ -124,3 +124,31 @@ async def get_review_report(
             "Content-Disposition": f"attachment; filename=review-{review_id[:8]}.md"
         }
     )
+
+
+@router.get("/{review_id}/report/html")
+async def get_review_report_html(
+    review_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """查看审查报告（HTML 格式）"""
+    from fastapi.responses import HTMLResponse
+
+    result = await db.execute(select(Review).where(Review.id == review_id))
+    review = result.scalar_one_or_none()
+    if not review:
+        raise HTTPException(status_code=404, detail="审查不存在")
+
+    project_result = await db.execute(select(Project).where(Project.id == review.project_id))
+    project = project_result.scalar_one_or_none()
+    project_name = project.name if project else "Unknown"
+
+    findings_result = await db.execute(
+        select(Finding).where(Finding.review_id == review_id).order_by(Finding.severity)
+    )
+    findings = findings_result.scalars().all()
+
+    generator = ReportGenerator()
+    report = generator.generate_html(review, findings, project_name)
+
+    return HTMLResponse(content=report)

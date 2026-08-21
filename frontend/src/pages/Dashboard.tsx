@@ -37,7 +37,7 @@ export default function Dashboard() {
   const [stats, setStats] = useState<Stats | null>(null);
 
   useEffect(() => {
-    api.get('/system/stats').then((res) => setStats(res as Stats));
+    api.get('/system/stats').then((res) => setStats(res as unknown as Stats));
   }, []);
 
   const statusColor: Record<string, string> = {

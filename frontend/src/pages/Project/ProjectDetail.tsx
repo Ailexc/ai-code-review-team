@@ -17,6 +17,7 @@ export default function ProjectDetail() {
   const [triggerResult, setTriggerResult] = useState<TriggerResult | null>(null);
   const [reviewLoading, setReviewLoading] = useState(false);
   const [reviewResult, setReviewResult] = useState<ReviewResult | null>(null);
+  const [reviewType, setReviewType] = useState('full');
   const [form] = Form.useForm();
 
   const fetchProject = () => {
@@ -70,12 +71,13 @@ export default function ProjectDetail() {
     setReviewLoading(true);
     setReviewResult(null);
     try {
-      const result = await triggerApi.runReview(project.id, 'security');
+      const result = await triggerApi.runReview(project.id, reviewType);
       setReviewResult(result);
-      message.success(`安全审查完成，发现 ${result.total_findings} 个问题`);
+      const typeLabel = reviewType === 'full' ? '综合' : reviewType === 'code_style' ? '规范' : '安全';
+      message.success(`${typeLabel}审查完成，发现 ${result.total_findings} 个问题`);
       fetchProject(); // 刷新项目数据（健康度可能更新）
     } catch {
-      message.error('安全审查失败');
+      message.error('审查失败');
     } finally {
       setReviewLoading(false);
     }
@@ -104,7 +106,17 @@ export default function ProjectDetail() {
             setEditOpen(true);
           }}>编辑</Button>
           <Button icon={<ThunderboltOutlined />} onClick={() => setTriggerOpen(true)}>扫描文件</Button>
-          <Button type="primary" icon={<SafetyOutlined />} loading={reviewLoading} onClick={handleRunReview}>安全审查</Button>
+          <Select
+            value={reviewType}
+            onChange={setReviewType}
+            style={{ width: 130 }}
+            options={[
+              { label: '综合审查', value: 'full' },
+              { label: '安全审查', value: 'security' },
+              { label: '规范审查', value: 'code_style' },
+            ]}
+          />
+          <Button type="primary" icon={<SafetyOutlined />} loading={reviewLoading} onClick={handleRunReview}>开始审查</Button>
         </Space>
       </div>
 

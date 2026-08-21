@@ -2,7 +2,6 @@
 
 import pytest
 from unittest.mock import patch
-from app.services.review_service import SecurityAgent
 
 
 @pytest.mark.asyncio
@@ -46,7 +45,10 @@ async def test_stats_with_data(client):
                 {"severity": "warning", "message": "w1", "file_path": "b.py", "line_start": 1},
             ]
 
-    with patch("app.services.review_service.SecurityAgent", FakeAgent):
+    with patch.dict(
+        "app.services.review_service.AGENT_REGISTRY",
+        {"security": (FakeAgent, "security", "security")},
+    ):
         await client.post("/api/v1/reviews/run", params={"project_id": project["id"]})
 
     resp = await client.get("/api/v1/system/stats")

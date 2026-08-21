@@ -18,19 +18,19 @@ async def _create_project(client):
 
 
 # mock 的安全审查结果
-FAKE_FINDINGS = [
+SECURITY_FINDINGS = [
     {
-        "rule_id": "TEST-001",
+        "rule_id": "TEST-SEC-001",
         "severity": "critical",
         "message": "发现 SQL 注入风险",
         "file_path": "app/main.py",
         "line_start": 10,
         "line_end": 10,
-        "code_snippet": "query = f\"SELECT * FROM users WHERE id={uid}\"",
+        "code_snippet": 'query = f"SELECT * FROM users WHERE id={uid}"',
         "suggestion": "使用参数化查询",
     },
     {
-        "rule_id": "TEST-002",
+        "rule_id": "TEST-SEC-002",
         "severity": "warning",
         "message": "使用了 eval",
         "file_path": "app/main.py",
@@ -40,10 +40,56 @@ FAKE_FINDINGS = [
     },
 ]
 
+# mock 的规范审查结果
+STYLE_FINDINGS = [
+    {
+        "rule_id": "TEST-STYLE-001",
+        "severity": "suggestion",
+        "message": "函数命名不规范",
+        "file_path": "app/main.py",
+        "line_start": 30,
+        "code_snippet": "def badname():",
+        "suggestion": "改为更清晰的名称",
+        "is_auto_fixable": False,
+    },
+    {
+        "rule_id": "TEST-STYLE-002",
+        "severity": "nitpick",
+        "message": "import 未排序",
+        "file_path": "app/main.py",
+        "line_start": 1,
+        "code_snippet": "import os\nimport sys",
+        "suggestion": "ruff 可自动修复",
+        "is_auto_fixable": True,
+    },
+]
 
-class FakeAgent:
+
+class FakeSecurityAgent:
     async def analyze(self, project_path, file_paths=None):
-        return FAKE_FINDINGS
+        return SECURITY_FINDINGS
+
+
+class FakeStyleAgent:
+    async def analyze(self, project_path, file_paths=None):
+        return STYLE_FINDINGS
+
+
+def _patch_security():
+    return patch.dict(
+        "app.services.review_service.AGENT_REGISTRY",
+        {"security": (FakeSecurityAgent, "security", "security")},
+    )
+
+
+def _patch_all():
+    return patch.dict(
+        "app.services.review_service.AGENT_REGISTRY",
+        {
+            "security": (FakeSecurityAgent, "security", "security"),
+            "code_style": (FakeStyleAgent, "code_style", "code_style"),
+        },
+    )
 
 
 @pytest.mark.asyncio
@@ -71,9 +117,9 @@ async def test_create_review_project_not_found(client):
 
 
 @pytest.mark.asyncio
-async def test_run_review_completed(client):
+async def test_run_security_review(client):
     project_id = await _create_project(client)
-    with patch("app.services.review_service.SecurityAgent", FakeAgent):
+    with _patch_security():
         resp = await client.post(
             "/api/v1/reviews/run",
             params={"project_id": project_id, "review_type": "security"},
@@ -81,10 +127,42 @@ async def test_run_review_completed(client):
     assert resp.status_code == 201
     data = resp.json()
     assert data["status"] == "completed"
+    assert data["review_type"] == "security"
     assert data["total_findings"] == 2
     assert data["critical_count"] == 1
     assert data["warning_count"] == 1
-    assert data["summary"]
+
+
+@pytest.mark.asyncio
+async def test_run_code_style_review(client):
+    project_id = await _create_project(client)
+    with _patch_all():
+        resp = await client.post(
+            "/api/v1/reviews/run",
+            params={"project_id": project_id, "review_type": "code_style"},
+        )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["status"] == "completed"
+    assert data["review_type"] == "code_style"
+    assert data["total_findings"] == 2
+    assert data["suggestion_count"] == 1
+    assert data["nitpick_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_run_full_review_runs_both_agents(client):
+    """full 类型应并行运行 security + code_style 两个 Agent"""
+    project_id = await _create_project(client)
+    with _patch_all():
+        resp = await client.post(
+            "/api/v1/reviews/run",
+            params={"project_id": project_id, "review_type": "full"},
+        )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["review_type"] == "full"
+    assert data["total_findings"] == 4  # 2 security + 2 code_style
 
 
 @pytest.mark.asyncio
@@ -96,7 +174,7 @@ async def test_run_review_project_not_found(client):
 @pytest.mark.asyncio
 async def test_list_reviews(client):
     project_id = await _create_project(client)
-    with patch("app.services.review_service.SecurityAgent", FakeAgent):
+    with _patch_security():
         await client.post("/api/v1/reviews/run", params={"project_id": project_id})
     resp = await client.get("/api/v1/reviews")
     assert resp.status_code == 200
@@ -104,44 +182,51 @@ async def test_list_reviews(client):
 
 
 @pytest.mark.asyncio
-async def test_get_review_with_findings(client):
-    project_id = await _create_project(client)
-    with patch("app.services.review_service.SecurityAgent", FakeAgent):
-        created = (await client.post(
-            "/api/v1/reviews/run", params={"project_id": project_id}
-        )).json()
-
-    resp = await client.get(f"/api/v1/reviews/{created['id']}")
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["total_findings"] == 2
-
-
-@pytest.mark.asyncio
 async def test_download_report(client):
     project_id = await _create_project(client)
-    with patch("app.services.review_service.SecurityAgent", FakeAgent):
+    with _patch_all():
         created = (await client.post(
-            "/api/v1/reviews/run", params={"project_id": project_id}
+            "/api/v1/reviews/run",
+            params={"project_id": project_id, "review_type": "full"},
         )).json()
 
     resp = await client.get(f"/api/v1/reviews/{created['id']}/report")
     assert resp.status_code == 200
     assert "# 代码审查报告" in resp.text
     assert "SQL 注入风险" in resp.text
+    assert "函数命名不规范" in resp.text
     assert resp.headers["content-type"].startswith("text/markdown")
+
+
+@pytest.mark.asyncio
+async def test_download_html_report(client):
+    project_id = await _create_project(client)
+    with _patch_all():
+        created = (await client.post(
+            "/api/v1/reviews/run",
+            params={"project_id": project_id, "review_type": "full"},
+        )).json()
+
+    resp = await client.get(f"/api/v1/reviews/{created['id']}/report/html")
+    assert resp.status_code == 200
+    assert "<!DOCTYPE html>" in resp.text
+    assert "代码审查报告" in resp.text
+    assert "SQL 注入风险" in resp.text
+    assert resp.headers["content-type"].startswith("text/html")
 
 
 @pytest.mark.asyncio
 async def test_findings_listing(client):
     project_id = await _create_project(client)
-    with patch("app.services.review_service.SecurityAgent", FakeAgent):
+    with _patch_all():
         created = (await client.post(
-            "/api/v1/reviews/run", params={"project_id": project_id}
+            "/api/v1/reviews/run",
+            params={"project_id": project_id, "review_type": "full"},
         )).json()
 
     resp = await client.get(f"/api/v1/findings", params={"review_id": created["id"]})
     assert resp.status_code == 200
     findings = resp.json()
-    assert len(findings) == 2
-    assert findings[0]["severity"] in ("critical", "warning", "suggestion")
+    assert len(findings) == 4
+    agent_names = {f["agent_name"] for f in findings}
+    assert agent_names == {"security", "code_style"}

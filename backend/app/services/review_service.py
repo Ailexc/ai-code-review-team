@@ -1,9 +1,11 @@
-"""审查服务 — 编排审查流程"""
+"""审查服务 — 编排审查流程（多 Agent 并行 + 结果聚合）"""
 
+import asyncio
 import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,8 +14,15 @@ from app.models.review import Review
 from app.models.finding import Finding
 from app.models.project import Project
 from app.agents.security_agent import SecurityAgent
+from app.agents.code_style_agent import CodeStyleAgent
 
 logger = structlog.get_logger()
+
+# Agent 注册表：review_type 片段 → (Agent 实例, agent_name, category)
+AGENT_REGISTRY = {
+    "security": (SecurityAgent, "security", "security"),
+    "code_style": (CodeStyleAgent, "code_style", "code_style"),
+}
 
 
 class ReviewService:
@@ -21,7 +30,16 @@ class ReviewService:
 
     def __init__(self, db: AsyncSession):
         self.db = db
-        self.security_agent = SecurityAgent()
+
+    def _resolve_agents(self, review_type: str) -> list[tuple[Any, str, str]]:
+        """根据审查类型解析需要运行的 Agent 列表"""
+        if review_type == "full":
+            return list(AGENT_REGISTRY.values())
+        if review_type in AGENT_REGISTRY:
+            return [AGENT_REGISTRY[review_type]]
+        # 未知类型：默认只跑安全审查
+        logger.warning("未知审查类型，回退到 security", review_type=review_type)
+        return [AGENT_REGISTRY["security"]]
 
     async def run_review(
         self,
@@ -30,7 +48,7 @@ class ReviewService:
         trigger_type: str = "manual",
         file_paths: list[str] | None = None,
     ) -> Review:
-        """执行一次完整审查
+        """执行一次完整审查（多 Agent 并行）
 
         Args:
             project: 项目对象
@@ -51,20 +69,33 @@ class ReviewService:
         logger.info("开始审查", review_id=review.id, project=project.name, type=review_type)
 
         start_time = time.monotonic()
-        all_findings = []
+        all_findings: list[Finding] = []
 
         try:
-            # 根据审查类型执行不同 Agent
-            if review_type in ("full", "security"):
-                findings = await self.security_agent.analyze(
+            agents = self._resolve_agents(review_type)
+
+            # 并行执行各 Agent
+            async def _run_one(agent_cls, agent_name: str, category: str) -> list[dict[str, Any]]:
+                agent = agent_cls()
+                logger.info("Agent 开始", review_id=review.id, agent=agent_name)
+                findings = await agent.analyze(
                     project_path=project.path,
                     file_paths=file_paths,
                 )
+                logger.info("Agent 完成", review_id=review.id, agent=agent_name, count=len(findings))
+                return findings
+
+            results = await asyncio.gather(
+                *[_run_one(cls, name, cat) for cls, name, cat in agents]
+            )
+
+            # 聚合入库
+            for (cls, agent_name, category), findings in zip(agents, results):
                 for f in findings:
                     finding = Finding(
                         review_id=review.id,
-                        agent_name="security",
-                        category="security",
+                        agent_name=agent_name,
+                        category=category,
                         severity=f.get("severity", "warning"),
                         message=f.get("message", ""),
                         description=f.get("message", ""),
@@ -72,11 +103,11 @@ class ReviewService:
                         line_number=f.get("line_start"),
                         code_snippet=f.get("code_snippet", ""),
                         suggestion=f.get("suggestion", ""),
+                        is_auto_fixable=bool(f.get("is_auto_fixable", False)),
+                        fix_suggestion=f.get("fix_suggestion"),
                     )
                     self.db.add(finding)
                     all_findings.append(finding)
-
-            # TODO: code_style / dependency / test_coverage agents
 
             # 更新审查记录
             elapsed = int(time.monotonic() - start_time)
@@ -96,6 +127,7 @@ class ReviewService:
                 review_id=review.id,
                 findings=review.total_findings,
                 duration=f"{elapsed}s",
+                agents=[a[1] for a in agents],
             )
 
         except Exception as e:

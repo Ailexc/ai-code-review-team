@@ -1,6 +1,6 @@
 # 项目进度 Check List
 
-> 最后更新：2026-08-21
+> 最后更新：2026-08-21（Phase A+B 完成）
 
 ## Day 1 MVP（基础框架）✅ 全部完成
 
@@ -73,18 +73,50 @@
 
 ### ❌ 未完成
 
-- [ ] ReviewFlow 骨架（CrewAI Flows + Crews 双层架构）— 可选，当前直接调用 Agent 已可用
+- [x] ReviewFlow 骨架（CrewAI Flows 双层架构）✅ `app/flows/review_flow.py` — 白盒编排 parse→dispatch→run→aggregate→report
 
 ---
 
-## Day 4-5（报告 + 联调）🔶 进行中 ~70%
+## Day 4-5（报告 + 联调）✅ 全部完成
 
 - [x] Markdown 报告生成 ✅
 - [x] 前端 Finding 列表展示（严重程度 / 代码片段 / 修复建议）✅
 - [x] 审查详情页完善（审查概览 + 发现列表 + 报告）✅
 - [x] 审查报告下载功能 ✅
-- [ ] 前后端联调
-- [ ] 集成测试
+- [x] 前后端联调 ✅ — 全链路验证（触发→审查→结果→报告，真实跑通 15 findings/89s）
+- [x] 集成测试 ✅ — `backend/tests/` 43 个用例全过（pytest+httpx 覆盖项目/触发器/审查/报告/模型配置/统计/Flow）
+
+---
+
+## Phase A（收尾 + 联调修复）✅ 完成
+
+- [x] 修复 LLM 配置选择 bug — MIMO 非 default 导致 LLM 分析被跳过
+- [x] 修复 Semgrep code_snippet 数据质量（占位符 "requires login" → 真实源码行）
+- [x] LLM 分析改为并发调用（Semaphore=3），单文件 ~40s 并行化
+- [x] 共享 LLM 客户端 `agents/llm_client.py` + 代码工具 `agents/utils.py`（消除重复）
+- [x] 系统统计接口 `GET /system/stats`（仪表盘数据源）
+- [x] 前端 Dashboard 真实统计 + 最近审查列表
+- [x] 前端触发页支持审查类型选择 + 开始审查流程
+- [x] 前端项目详情页支持审查类型下拉（full/security/code_style）
+- [x] Pydantic v2 弃用警告清理（class Config → model_config）
+
+---
+
+## Phase B（V3.0 代码规范审查 + 多 Agent 编排 + 报告增强）✅ 完成
+
+- [x] CodeStyleAgent（`agents/code_style_agent.py`）— Ruff 静态检查 + LLM 语义点评
+- [x] ReviewService 多 Agent 并行编排（full = security + code_style，asyncio.gather）
+- [x] 报告增强：按 Agent 分组 + 补齐 nitpick + HTML 报告（`GET /reviews/{id}/report/html`）
+- [x] 前端审查详情页新增「HTML报告」按钮
+- [x] ReviewFlow（CrewAI Flows 双层编排骨架）+ 3 个编排测试
+
+### 真实跑通的验证
+
+| 审查类型 | findings | 耗时 | 说明 |
+|----------|----------|------|------|
+| security | 15（7 严重/7 警告/1 建议） | 89s | Semgrep + LLM 语义分析 |
+| code_style | 4（2 警告/1 建议/1 细节） | 140s | Ruff + LLM 规范点评 |
+| full | 见下方后台验证 | - | security + code_style 并行 |
 
 ---
 
@@ -99,9 +131,11 @@
 
 ## 待解决
 
-1. ~~LLM API Key 未配置~~ ✅ 已配置 MIMO 模型
-2. Semgrep 在容器内需要首次下载规则（可能较慢）
+1. ~~LLM API Key 未配置~~ ✅ 已配置 MIMO 模型（mimo-v2.5 推理模型）
+2. ~~Semgrep 首次下载规则较慢~~ ✅ 规则已缓存，后续扫描正常
 3. ~~审查结果前端展示待完善~~ ✅ 已完成
+4. LLM 为推理模型，单文件分析 ~40s（已通过并发优化，多文件并行）
+5. 后续阶段：依赖审查 + 测试覆盖（V4.0）、实时进度 + 健康度（V5.0）、增量审查 + 优化（V6.0-V7.0）
 
 ---
 

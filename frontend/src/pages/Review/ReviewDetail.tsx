@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Card, Tag, Button, message, Spin, Space, List, Typography, Alert, Descriptions } from 'antd';
-import { ArrowLeftOutlined, ExclamationCircleOutlined, WarningOutlined, InfoCircleOutlined, DownloadOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, ExclamationCircleOutlined, WarningOutlined, InfoCircleOutlined, DownloadOutlined, EyeOutlined } from '@ant-design/icons';
 import api from '@/api/index';
 import dayjs from 'dayjs';
 
@@ -51,8 +51,8 @@ export default function ReviewDetail() {
       api.get(`/findings?review_id=${id}`),
     ])
       .then(([reviewData, findingsData]) => {
-        setReview(reviewData as Review);
-        setFindings(findingsData as Finding[]);
+        setReview(reviewData as unknown as Review);
+        setFindings(findingsData as unknown as Finding[]);
       })
       .catch(() => message.error('获取审查详情失败'))
       .finally(() => setLoading(false));
@@ -61,6 +61,11 @@ export default function ReviewDetail() {
   const handleDownloadReport = () => {
     if (!id) return;
     window.open(`/api/v1/reviews/${id}/report`, '_blank');
+  };
+
+  const handleViewHtmlReport = () => {
+    if (!id) return;
+    window.open(`/api/v1/reviews/${id}/report/html`, '_blank');
   };
 
   if (loading) return <Spin size="large" style={{ display: 'block', marginTop: 100 }} />;
@@ -90,6 +95,7 @@ export default function ReviewDetail() {
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
         <h1>审查详情</h1>
         <Space>
+          <Button icon={<EyeOutlined />} onClick={handleViewHtmlReport}>HTML报告</Button>
           <Button icon={<DownloadOutlined />} onClick={handleDownloadReport}>下载报告</Button>
         </Space>
       </div>

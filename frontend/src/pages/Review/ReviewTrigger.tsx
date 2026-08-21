@@ -1,13 +1,12 @@
 import { useState, useEffect } from 'react';
-import { Card, Button, Upload, Input, Select, message, List, Tag, Space, Typography, Tabs, Radio } from 'antd';
+import { Card, Button, Upload, Input, Select, message, List, Space, Typography, Tabs, Radio } from 'antd';
 import { UploadOutlined, FolderOpenOutlined, FileTextOutlined, ThunderboltOutlined, PlayCircleOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
-import { triggerApi, TriggerResult, TriggerTypeInfo } from '@/api/triggerApi';
+import { triggerApi, TriggerResult } from '@/api/triggerApi';
 import { projectApi, Project } from '@/api/projectApi';
 
 export default function ReviewTrigger() {
   const navigate = useNavigate();
-  const [triggerTypes, setTriggerTypes] = useState<TriggerTypeInfo[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [result, setResult] = useState<TriggerResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -20,7 +19,6 @@ export default function ReviewTrigger() {
   const [filename, setFilename] = useState('pasted_code.py');
 
   useEffect(() => {
-    triggerApi.listTypes().then(res => setTriggerTypes(res.triggers));
     projectApi.list({ page: 1, page_size: 100 }).then(res => setProjects(res.items));
   }, []);
 
