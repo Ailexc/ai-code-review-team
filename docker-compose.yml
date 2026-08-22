@@ -5,10 +5,13 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    ports:
+      - "8001:8000"
     volumes:
       - ./backend:/app
       - ./uploads:/app/uploads
       - ./data:/app/data
+      - ./test-projects:/app/test-projects
     environment:
       - DATABASE_URL=sqlite+aiosqlite:///./data/code_review.db
       - DEBUG=true
@@ -20,6 +23,8 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
     volumes:
       - ./frontend:/app
       - /app/node_modules

@@ -78,7 +78,7 @@ export default function ProjectDetail() {
     setProgressOpen(false);
     const typeLabels: Record<string, string> = {
       full: '综合', security: '安全', code_style: '规范',
-      dependency: '依赖', test_coverage: '测试覆盖',
+      dependency: '依赖', test_coverage: '测试覆盖', performance: '性能', git_review: 'Git',
     };
     message.success(`${typeLabels[reviewType] || reviewType}审查完成：${summary}`);
     fetchProject();
@@ -132,6 +132,8 @@ export default function ProjectDetail() {
               { label: '规范审查', value: 'code_style' },
               { label: '依赖审查', value: 'dependency' },
               { label: '测试覆盖', value: 'test_coverage' },
+              { label: '性能分析', value: 'performance' },
+              { label: 'Git 审查', value: 'git_review' },
             ]}
           />
           <Button type="primary" icon={<SafetyOutlined />} onClick={handleRunReview}>开始审查</Button>
@@ -144,7 +146,13 @@ export default function ProjectDetail() {
         <Descriptions.Item label="描述">{project.description || '-'}</Descriptions.Item>
         <Descriptions.Item label="语言">{project.language ? <Tag color="blue">{project.language}</Tag> : '-'}</Descriptions.Item>
         <Descriptions.Item label="框架">{project.framework || '-'}</Descriptions.Item>
-        <Descriptions.Item label="Git远程">{project.git_remote || '-'}</Descriptions.Item>
+        <Descriptions.Item label="Git远程">
+          {project.git_remote ? (
+            <a href={project.git_remote} target="_blank" rel="noopener noreferrer">
+              {project.git_remote} <Tag color="blue">打开仓库</Tag>
+            </a>
+          ) : '-'}
+        </Descriptions.Item>
         <Descriptions.Item label="健康度">
           <Tag color={project.health_score >= 80 ? 'green' : project.health_score >= 60 ? 'orange' : 'red'}>
             {project.health_score}%

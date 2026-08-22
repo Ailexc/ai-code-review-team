@@ -1,14 +1,17 @@
 """审查发现管理 API"""
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import Optional
 
+import structlog
+
 from app.core.database import get_db
 from app.models.finding import Finding
-from app.schemas.finding import FindingResponse
+from app.schemas.finding import FindingResponse, FindingStatusUpdate
 
+logger = structlog.get_logger()
 router = APIRouter()
 
 
@@ -46,6 +49,32 @@ async def get_finding(
     result = await db.execute(select(Finding).where(Finding.id == finding_id))
     finding = result.scalar_one_or_none()
     if not finding:
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="发现不存在")
+    return FindingResponse.model_validate(finding)
+
+
+@router.put("/{finding_id}/status", response_model=FindingResponse)
+async def update_finding_status(
+    finding_id: str,
+    data: FindingStatusUpdate,
+    db: AsyncSession = Depends(get_db),
+):
+    """更新发现状态（open / acknowledged / fixed）"""
+    result = await db.execute(select(Finding).where(Finding.id == finding_id))
+    finding = result.scalar_one_or_none()
+    if not finding:
+        raise HTTPException(status_code=404, detail="发现不存在")
+
+    old_status = finding.status
+    finding.status = data.status
+    await db.flush()
+    logger.info("发现状态更新", finding_id=finding_id, old_status=old_status, new_status=data.status)
+
+    # 应用规则反馈（PR 历史学习）
+    try:
+        from app.services.rule_miner import rule_miner
+        await rule_miner.apply_feedback(finding_id, data.status)
+    except Exception as e:
+        logger.warning("规则反馈应用失败", error=str(e))
+
     return FindingResponse.model_validate(finding)

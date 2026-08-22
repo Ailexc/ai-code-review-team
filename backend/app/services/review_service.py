@@ -18,8 +18,11 @@ from app.agents.security_agent import SecurityAgent
 from app.agents.code_style_agent import CodeStyleAgent
 from app.agents.dependency_agent import DependencyAgent
 from app.agents.test_coverage_agent import TestCoverageAgent
+from app.agents.performance_agent import PerformanceAgent
+from app.agents.git_review_agent import GitReviewAgent
 from app.services.health import compute_health_score
 from app.services.progress import progress_emitter
+from app.services.metrics import metrics
 
 logger = structlog.get_logger()
 
@@ -29,6 +32,8 @@ AGENT_REGISTRY = {
     "code_style": (CodeStyleAgent, "code_style", "code_style"),
     "dependency": (DependencyAgent, "dependency", "dependency"),
     "test_coverage": (TestCoverageAgent, "test_coverage", "test_coverage"),
+    "performance": (PerformanceAgent, "performance", "performance"),
+    "git_review": (GitReviewAgent, "git_review", "git_review"),
 }
 
 
@@ -109,10 +114,16 @@ class ReviewService:
                 agent = agent_cls()
                 logger.info("Agent 开始", review_id=review.id, agent=agent_name)
                 await progress_emitter.emit(review.id, "agent_started", {"agent": agent_name})
-                findings = await agent.analyze(
-                    project_path=project.path,
-                    file_paths=file_paths,
-                )
+                agent_start = time.monotonic()
+                try:
+                    findings = await agent.analyze(
+                        project_path=project.path,
+                        file_paths=file_paths,
+                    )
+                    metrics.record_agent_run(agent_name, True, time.monotonic() - agent_start, len(findings))
+                except Exception as e:
+                    metrics.record_agent_run(agent_name, False, time.monotonic() - agent_start, 0)
+                    raise
                 logger.info("Agent 完成", review_id=review.id, agent=agent_name, count=len(findings))
                 await progress_emitter.emit(review.id, "agent_completed", {
                     "agent": agent_name, "findings": len(findings),
@@ -158,6 +169,16 @@ class ReviewService:
             project.health_score = review.health_score_snapshot
 
             await self.db.flush()
+            metrics.record_review(review_type, "completed", elapsed)
+            # 审计日志
+            metrics.record_audit("review_completed", {
+                "review_id": review.id,
+                "project": project.name,
+                "review_type": review_type,
+                "findings": review.total_findings,
+                "duration_s": elapsed,
+                "health_score": review.health_score_snapshot,
+            })
             logger.info(
                 "审查完成",
                 review_id=review.id,
@@ -183,6 +204,7 @@ class ReviewService:
             review.duration_seconds = int(time.monotonic() - start_time)
             review.summary = f"审查失败: {e}"
             await self.db.flush()
+            metrics.record_review(review_type, "failed", review.duration_seconds)
             logger.error("审查失败", review_id=review.id, error=str(e))
             await progress_emitter.emit(review.id, "review_failed", {"error": str(e)})
             raise

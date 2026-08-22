@@ -16,6 +16,7 @@ from httpx import ASGITransport, AsyncClient
 
 from app.main import app
 from app.core.database import init_db, async_session_factory
+from app.services.metrics import metrics
 from sqlalchemy import text
 
 
@@ -23,6 +24,8 @@ from sqlalchemy import text
 async def client():
     """提供测试用 HTTP 客户端（每个用例独立事务隔离数据库）"""
     await init_db()
+    # 重置全局指标，避免测试间数据累积
+    metrics.reset()
     # 清空数据，保证用例隔离
     async with async_session_factory() as db:
         for table in ("findings", "reviews", "llm_configs", "projects"):

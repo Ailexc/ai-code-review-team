@@ -20,6 +20,8 @@ AGENT_LABELS = {
     "code_style": "代码规范",
     "dependency": "依赖审查",
     "test_coverage": "测试覆盖",
+    "performance": "性能分析",
+    "git_review": "Git 审查",
 }
 
 

@@ -7,6 +7,9 @@ import ReviewDetail from './pages/Review/ReviewDetail';
 import ReviewTrigger from './pages/Review/ReviewTrigger';
 import ReviewList from './pages/Review/ReviewList';
 import ModelSettings from './pages/Settings/ModelSettings';
+import DocsPage from './pages/Docs/DocsPage';
+import RulesPage from './pages/Rules/RulesPage';
+import SemanticDiffPage from './pages/SemanticDiff/SemanticDiffPage';
 
 function App() {
   return (
@@ -19,6 +22,9 @@ function App() {
         <Route path="reviews" element={<ReviewList />} />
         <Route path="reviews/:id" element={<ReviewDetail />} />
         <Route path="settings/models" element={<ModelSettings />} />
+        <Route path="docs" element={<DocsPage />} />
+        <Route path="rules" element={<RulesPage />} />
+        <Route path="semantic-diff" element={<SemanticDiffPage />} />
       </Route>
     </Routes>
   );

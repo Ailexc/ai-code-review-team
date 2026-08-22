@@ -17,6 +17,7 @@ export default defineConfig({
       '/api': {
         target: process.env.VITE_API_URL || 'http://backend:8000',
         changeOrigin: true,
+        ws: true, // 支持 WebSocket 转发（审查进度实时推送）
         rewrite: (path) => path,
       },
     },

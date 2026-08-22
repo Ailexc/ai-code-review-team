@@ -1,0 +1,71 @@
+<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 800px; line-height: 1.8; color: #333;">
+<h1>🌐 系统架构总览</h1>
+
+<h2>1. 项目定位</h2>
+<p>构建一个<strong>多 Agent 协作代码审查系统</strong>，模拟真实 Code Review 流程。用户提交代码，系统触发多个专业 Agent 并行审查，由主 Agent 汇总生成结构化审查报告。</p>
+
+<h2>2. 核心设计原则</h2>
+<ul>
+<li><strong>确定性工具兜底 + LLM 语义补充</strong>：Semgrep/Ruff/pip-audit/AST 确保基础检测不漏，LLM 补充语义理解和修复建议</li>
+<li><strong>6 Agent 并行编排</strong>：asyncio.gather 并行执行，结果去重聚合，最小化审查时间</li>
+<li><strong>可验证维度</strong>：每个 Agent 聚焦可验证的代码质量维度（安全/规范/依赖/覆盖/性能/Git）</li>
+</ul>
+
+<h2>3. 系统架构图</h2>
+<pre style="background: #f6f8fa; padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 13px; line-height: 1.6;">
+┌─────────────────────────────────────────────────┐
+│                   用户层                         │
+│   Web UI (React)  │  CLI  │  REST API            │
+└────────────────────┬────────────────────────────┘
+                     │
+┌────────────────────▼────────────────────────────┐
+│                 API 网关层                       │
+│          FastAPI + 路由 + 请求验证               │
+└────────────────────┬────────────────────────────┘
+                     │
+┌────────────────────▼────────────────────────────┐
+│               业务逻辑层                         │
+│  项目管理 │ 审查调度 │ Finding 状态管理          │
+└────────────────────┬────────────────────────────┘
+                     │
+┌────────────────────▼────────────────────────────┐
+│              AI Agent 层（6 个并行）             │
+│  ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐          │
+│  │安全  │ │规范  │ │依赖  │ │覆盖  │          │
+│  │审查  │ │审查  │ │审查  │ │审查  │          │
+│  └──────┘ └──────┘ └──────┘ └──────┘          │
+│  ┌──────┐ ┌──────┐                             │
+│  │性能  │ │Git   │                             │
+│  │分析  │ │审查  │                             │
+│  └──────┘ └──────┘                             │
+└────────────────────┬────────────────────────────┘
+                     │
+┌────────────────────▼────────────────────────────┐
+│              外部工具层                          │
+│  Semgrep │ Ruff │ pip-audit │ AST │ GitPython   │
+└─────────────────────────────────────────────────┘
+</pre>
+
+<h2>4. 数据流</h2>
+<ol>
+<li><strong>触发</strong>：用户通过 Web UI 选择项目和审查类型</li>
+<li><strong>调度</strong>：ReviewService 解析审查类型，确定需要运行的 Agent 列表</li>
+<li><strong>并行执行</strong>：asyncio.gather 并行启动所有 Agent</li>
+<li><strong>结果聚合</strong>：每个 Agent 的 findings 汇总、去重、按严重度排序</li>
+<li><strong>健康度计算</strong>：基于 findings 的负分制评分（0-100）</li>
+<li><strong>报告生成</strong>：Markdown + HTML 格式报告</li>
+</ol>
+
+<h2>5. 技术栈</h2>
+<table style="border-collapse: collapse; width: 100%;">
+<tr style="background: #f6f8fa;"><th style="padding: 8px; border: 1px solid #ddd;">组件</th><th style="padding: 8px; border: 1px solid #ddd;">技术</th><th style="padding: 8px; border: 1px solid #ddd;">版本</th></tr>
+<tr><td style="padding: 8px; border: 1px solid #ddd;">Web 框架</td><td style="padding: 8px; border: 1px solid #ddd;">FastAPI</td><td style="padding: 8px; border: 1px solid #ddd;">0.104+</td></tr>
+<tr><td style="padding: 8px; border: 1px solid #ddd;">ORM</td><td style="padding: 8px; border: 1px solid #ddd;">SQLAlchemy</td><td style="padding: 8px; border: 1px solid #ddd;">2.0+</td></tr>
+<tr><td style="padding: 8px; border: 1px solid #ddd;">数据库</td><td style="padding: 8px; border: 1px solid #ddd;">SQLite (aiosqlite)</td><td style="padding: 8px; border: 1px solid #ddd;">-</td></tr>
+<tr><td style="padding: 8px; border: 1px solid #ddd;">前端框架</td><td style="padding: 8px; border: 1px solid #ddd;">React + TypeScript</td><td style="padding: 8px; border: 1px solid #ddd;">18+</td></tr>
+<tr><td style="padding: 8px; border: 1px solid #ddd;">UI 库</td><td style="padding: 8px; border: 1px solid #ddd;">Ant Design</td><td style="padding: 8px; border: 1px solid #ddd;">5.0+</td></tr>
+<tr><td style="padding: 8px; border: 1px solid #ddd;">安全分析</td><td style="padding: 8px; border: 1px solid #ddd;">Semgrep</td><td style="padding: 8px; border: 1px solid #ddd;">1.50+</td></tr>
+<tr><td style="padding: 8px; border: 1px solid #ddd;">代码规范</td><td style="padding: 8px; border: 1px solid #ddd;">Ruff</td><td style="padding: 8px; border: 1px solid #ddd;">0.1+</td></tr>
+<tr><td style="padding: 8px; border: 1px solid #ddd;">依赖漏洞</td><td style="padding: 8px; border: 1px solid #ddd;">pip-audit</td><td style="padding: 8px; border: 1px solid #ddd;">-</td></tr>
+</table>
+</div>

@@ -93,7 +93,13 @@ export default function ProjectList() {
         <a onClick={() => navigate(`/projects/${record.id}`)}>{text}</a>
       ),
     },
-    { title: '路径', dataIndex: 'path', key: 'path', ellipsis: true },
+    { title: '路径', dataIndex: 'path', key: 'path', ellipsis: true,
+      render: (path: string, record: Project) => record.git_remote ? (
+        <a href={record.git_remote} target="_blank" rel="noopener noreferrer" title="打开 Git 仓库">
+          {path} <Tag color="blue" style={{ fontSize: 11 }}>GitHub</Tag>
+        </a>
+      ) : path,
+    },
     { title: '语言', dataIndex: 'language', key: 'language',
       render: (lang: string) => lang ? <Tag color="blue">{lang}</Tag> : '-',
     },

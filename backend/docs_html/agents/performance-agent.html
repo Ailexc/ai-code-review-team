@@ -1,0 +1,49 @@
+<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 800px; line-height: 1.8; color: #333;">
+<h1>⚡ 性能分析 Agent</h1>
+
+<h2>功能概述</h2>
+<p>通过 AST 静态分析 + LLM 语义分析，检测 Python 代码中的性能反模式和瓶颈。</p>
+
+<h2>检测维度</h2>
+<table style="border-collapse: collapse; width: 100%; margin: 16px 0;">
+<tr style="background: #f6f8fa;"><th style="padding: 8px; border: 1px solid #ddd;">规则 ID</th><th style="padding: 8px; border: 1px solid #ddd;">检测项</th><th style="padding: 8px; border: 1px solid #ddd;">严重度</th><th style="padding: 8px; border: 1px solid #ddd;">说明</th></tr>
+<tr><td style="padding: 8px; border: 1px solid #ddd;">PERF-N+1</td><td style="padding: 8px; border: 1px solid #ddd;">N+1 查询</td><td style="padding: 8px; border: 1px solid #ddd; color: red;">critical</td><td style="padding: 8px; border: 1px solid #ddd;">循环内 ORM 调用，应改为批量查询</td></tr>
+<tr><td style="padding: 8px; border: 1px solid #ddd;">PERF-SYNC</td><td style="padding: 8px; border: 1px solid #ddd;">同步阻塞</td><td style="padding: 8px; border: 1px solid #ddd; color: red;">critical</td><td style="padding: 8px; border: 1px solid #ddd;">async 函数内 time.sleep/requests 等阻塞调用</td></tr>
+<tr><td style="padding: 8px; border: 1px solid #ddd;">PERF-CONCAT</td><td style="padding: 8px; border: 1px solid #ddd;">字符串拼接</td><td style="padding: 8px; border: 1px solid #ddd; color: #faad14;">warning</td><td style="padding: 8px; border: 1px solid #ddd;">循环内字符串 += 拼接，O(n²) 复杂度</td></tr>
+<tr><td style="padding: 8px; border: 1px solid #ddd;">PERF-UNBOUNDED</td><td style="padding: 8px; border: 1px solid #ddd;">无限制查询</td><td style="padding: 8px; border: 1px solid #ddd; color: #1677ff;">suggestion</td><td style="padding: 8px; border: 1px solid #ddd;">.all() 无 .limit() 限制返回数量</td></tr>
+</table>
+
+<h2>代码示例</h2>
+<h3>❌ N+1 查询（循环内 ORM 调用）</h3>
+<pre style="background: #fff1f0; padding: 12px; border-radius: 6px; border-left: 3px solid #ff4d4f;"><code>def get_users(session, user_ids):
+    results = []
+    for uid in user_ids:
+        user = session.query(User).filter(User.id == uid).first()  # 每次循环都查一次 DB
+        results.append(user)
+    return results</code></pre>
+
+<h3>✅ 修复后（批量查询）</h3>
+<pre style="background: #f6ffed; padding: 12px; border-radius: 6px; border-left: 3px solid #52c41a;"><code>def get_users(session, user_ids):
+    return session.query(User).filter(User.id.in_(user_ids)).all()  # 一次查询</code></pre>
+
+<h3>❌ 同步阻塞（async 函数内）</h3>
+<pre style="background: #fff1f0; padding: 12px; border-radius: 6px; border-left: 3px solid #ff4d4f;"><code>import time
+
+async def fetch_data():
+    time.sleep(5)  # 阻塞事件循环！
+    return "done"</code></pre>
+
+<h3>✅ 修复后（使用 asyncio.sleep）</h3>
+<pre style="background: #f6ffed; padding: 12px; border-radius: 6px; border-left: 3px solid #52c41a;"><code>import asyncio
+
+async def fetch_data():
+    await asyncio.sleep(5)  # 非阻塞
+    return "done"</code></pre>
+
+<h2>技术实现</h2>
+<ul>
+<li>使用 Python AST 模块解析源代码，遍历 AST 节点检测反模式</li>
+<li>AST 检测确保零误报（确定性分析）</li>
+<li>LLM 补充检测 AST 无法发现的复杂性能问题</li>
+</ul>
+</div>

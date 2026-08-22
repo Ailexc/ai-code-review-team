@@ -5,10 +5,13 @@
 
 import asyncio
 import json
+import time
 from typing import Any, Optional
 
 import httpx
 import structlog
+
+from app.services.metrics import metrics
 
 logger = structlog.get_logger()
 
@@ -59,19 +62,69 @@ async def llm_complete(
         "temperature": config.temperature if temperature is None else temperature,
     }
     try:
+        t0 = time.monotonic()
         async with httpx.AsyncClient(timeout=timeout) as client:
             resp = await client.post(
                 f"{base_url}/chat/completions",
                 headers=headers,
                 json=payload,
             )
+        latency = time.monotonic() - t0
         if resp.status_code != 200:
+            metrics.record_llm_call(False, latency, model=config.model)
             logger.warning("LLM API 调用失败", status=resp.status_code, detail=resp.text[:200])
             return None
-        return resp.json().get("choices", [{}])[0].get("message", {}).get("content", "")
+        resp_json = resp.json()
+        usage = resp_json.get("usage", {})
+        prompt_tokens = usage.get("prompt_tokens", 0)
+        completion_tokens = usage.get("completion_tokens", 0)
+        total_tokens = usage.get("total_tokens", prompt_tokens + completion_tokens)
+        metrics.record_llm_call(True, latency, total_tokens, model=config.model)
+        # 持久化 token 用量（重启不丢失）
+        try:
+            await _record_usage(
+                model=config.model,
+                config_name=config.name,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=total_tokens,
+                latency_ms=int(latency * 1000),
+                success=True,
+            )
+        except Exception as e:
+            logger.warning("LLM 用量记录失败", error=str(e))
+        return resp_json.get("choices", [{}])[0].get("message", {}).get("content", "")
     except Exception as e:
+        metrics.record_llm_call(False, 0, model=config.model)
         logger.warning("LLM 调用异常", error=str(e))
         return None
+
+
+async def _record_usage(
+    model: str,
+    config_name: str | None,
+    prompt_tokens: int,
+    completion_tokens: int,
+    total_tokens: int,
+    latency_ms: int | None,
+    success: bool,
+):
+    """持久化 LLM 调用用量到数据库"""
+    from app.core.database import async_session_factory
+    from app.models.llm_usage import LLMUsage
+
+    async with async_session_factory() as db:
+        usage = LLMUsage(
+            model=model,
+            config_name=config_name,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+            latency_ms=latency_ms,
+            success=success,
+        )
+        db.add(usage)
+        await db.commit()
 
 
 def parse_json_object(reply: str | None) -> Optional[dict]:

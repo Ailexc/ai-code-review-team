@@ -12,6 +12,7 @@ class ProjectCreate(BaseModel):
     description: Optional[str] = Field(None, description="项目描述")
     language: Optional[str] = Field(None, description="编程语言")
     framework: Optional[str] = Field(None, description="框架")
+    git_remote: Optional[str] = Field(None, description="Git 远程仓库地址")
 
 
 class ProjectUpdate(BaseModel):
@@ -20,6 +21,7 @@ class ProjectUpdate(BaseModel):
     description: Optional[str] = None
     language: Optional[str] = None
     framework: Optional[str] = None
+    git_remote: Optional[str] = None
     is_active: Optional[bool] = None
 
 

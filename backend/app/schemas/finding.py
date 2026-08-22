@@ -1,6 +1,6 @@
 """审查发现相关 Pydantic 模型"""
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime
 
@@ -26,3 +26,8 @@ class FindingResponse(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class FindingStatusUpdate(BaseModel):
+    """更新发现状态"""
+    status: str = Field(..., pattern="^(open|acknowledged|fixed)$", description="新状态: open / acknowledged / fixed")

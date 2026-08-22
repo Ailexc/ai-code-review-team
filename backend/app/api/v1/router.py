@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import projects, reviews, findings, system, triggers, llm_configs
+from app.api.v1.endpoints import projects, reviews, findings, system, triggers, llm_configs, docs, rules, semantic_diff
 
 api_router = APIRouter(prefix="/api/v1")
 
@@ -12,3 +12,6 @@ api_router.include_router(findings.router, prefix="/findings", tags=["发现管�
 api_router.include_router(system.router, prefix="/system", tags=["系统管理"])
 api_router.include_router(triggers.router, prefix="/triggers", tags=["触发器"])
 api_router.include_router(llm_configs.router, prefix="/llm-configs", tags=["模型配置"])
+api_router.include_router(docs.router, prefix="/docs", tags=["系统文档"])
+api_router.include_router(rules.router, prefix="/rules", tags=["审查规则"])
+api_router.include_router(semantic_diff.router, prefix="/semantic-diff", tags=["语义 Diff"])

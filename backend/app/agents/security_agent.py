@@ -118,10 +118,11 @@ class SecurityAgent(BaseAgent):
         path: Path,
         file_paths: list[str] | None = None,
     ) -> list[dict[str, Any]]:
-        """使用 LLM 进行智能安全分析（并发调用）"""
+        """使用 LLM 进行智能安全分析（并发调用，注入代码库上下文）"""
         try:
             from app.agents.llm_client import get_active_llm_config, run_llm_analysis
             from app.agents.utils import collect_code_files_for_llm
+            from app.agents.context_enhancer import agent_context
 
             config = await get_active_llm_config()
             if not config:
@@ -132,8 +133,17 @@ class SecurityAgent(BaseAgent):
             if not files:
                 return []
 
+            # 构建代码库上下文（增强审查质量）
+            agent_context.build(str(path), file_paths)
+
             prompts = [
-                (fp, SECURITY_PROMPT.format(file_path=fp, code_content=content))
+                (
+                    fp,
+                    agent_context.enhance_prompt(
+                        fp,
+                        SECURITY_PROMPT.format(file_path=fp, code_content=content),
+                    ),
+                )
                 for fp, content in files
             ]
             findings = await run_llm_analysis(config, prompts, default_rule="LLM-SEC")

@@ -278,3 +278,55 @@ async def get_review_report_html(
     report = generator.generate_html(review, findings, project_name)
 
     return HTMLResponse(content=report)
+
+
+@router.post("/{review_id}/autofix")
+async def run_autofix(
+    review_id: str,
+    apply: bool = False,
+    db: AsyncSession = Depends(get_db),
+):
+    """自动修复可修复的发现（预览模式 / 应用模式）
+
+    - apply=false（默认）：仅生成补丁预览，不修改文件
+    - apply=true：直接应用 Ruff 自动修复
+    """
+    result = await db.execute(select(Review).where(Review.id == review_id))
+    review = result.scalar_one_or_none()
+    if not review:
+        raise HTTPException(status_code=404, detail="审查不存在")
+
+    project_result = await db.execute(select(Project).where(Project.id == review.project_id))
+    project = project_result.scalar_one_or_none()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    findings_result = await db.execute(
+        select(Finding).where(Finding.review_id == review_id)
+    )
+    findings = findings_result.scalars().all()
+
+    # 转换为 dict 列表供 AutoFixEngine 使用
+    findings_dicts = [
+        {
+            "id": f.id,
+            "is_auto_fixable": f.is_auto_fixable,
+            "file_path": f.file_path,
+            "rule_id": f.agent_name,  # agent_name 作为 rule_id 的近似
+            "message": f.message,
+            "severity": f.severity,
+            "fix_suggestion": f.fix_suggestion,
+        }
+        for f in findings
+    ]
+
+    from app.services.autofix import AutoFixEngine
+    engine = AutoFixEngine()
+    fix_result = await engine.run(
+        project_path=project.path,
+        findings=findings_dicts,
+        apply=apply,
+    )
+
+    logger.info("自动修复", review_id=review_id, apply=apply, summary=fix_result["summary"])
+    return fix_result
