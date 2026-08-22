@@ -10,6 +10,17 @@
 > - [x] 测试：140 全通过（新增 test_crew_factory + 重写 test_review_flow 5 用例 + helpers.patch_review_flow 适配集成测试）
 > - [x] 前端可学习化：ReviewProgress 新增「外层 Flow 节点流程图 + 内层 Crew 明细卡片（role）」；ReviewTrigger 修正 asyncio.gather 宣传 + 新增"快速演示模式（真实执行）"引导
 > - [x] 文档清理：multi-agent-orchestration.html 重写为 CrewAI 双层架构学习文档；architecture-overview.html 移除 asyncio.gather/优雅降级表述
+> - [x] 应用冒烟：ASGI 请求验证 health/projects/docs/编排文档/reviews 路由全部正常
+> - [x] 已提交：分支 `refactor/crewai-flows-crews`（06970ba → e1275f1 → 2703611）
+>
+> ### ⏳ 待用户验收（开发侧已完成，以下需真实环境 + 真实 LLM）
+>
+> - [ ] 配置并启用 LLM（设置 → 模型配置，填 API Key）
+> - [ ] 启动服务，跑一次「安全审查」→ 观察外层 Flow 流程图 + 内层 Crew 卡片真实流转
+> - [ ] 跑「综合审查」→ 观察 6 Crew 并行 + 聚合去重 + 健康度
+> - [ ] 验证无 LLM 时返回清晰错误（不静默降级）
+> - [ ] Docs 页确认「多 Agent 编排」双层架构文档展示
+> - [ ] 验收通过后合并分支回 main
 
 > ## ⚠️ 路线修正记录（2026-08-22）
 >
