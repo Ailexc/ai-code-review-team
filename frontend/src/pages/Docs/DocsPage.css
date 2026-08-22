@@ -1,0 +1,540 @@
+/* ========================================
+   文档页面样式系统
+   参考 GitBook/Docusaurus 风格
+   ======================================== */
+
+/* Design Tokens */
+:root {
+  --doc-bg-primary: #f9fafb;
+  --doc-bg-secondary: #ffffff;
+  --doc-text-primary: #1f2937;
+  --doc-text-secondary: #6b7280;
+  --doc-text-tertiary: #9ca3af;
+  --doc-border-color: #e5e7eb;
+  --doc-link-color: #1677ff;
+  --doc-link-hover: #4096ff;
+  --doc-code-bg: #f6f8fa;
+  --doc-code-border: #e1e4e8;
+  --doc-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --doc-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  --doc-radius: 8px;
+}
+
+/* 文档页面容器 */
+.docs-page {
+  background: var(--doc-bg-primary);
+  min-height: 100%;
+  padding: 32px 24px;
+}
+
+/* ========================================
+   列表页样式
+   ======================================== */
+.docs-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 40px;
+  gap: 24px;
+}
+
+.docs-header-title {
+  margin: 0 0 8px 0;
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--doc-text-primary);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.docs-header-subtitle {
+  margin: 0;
+  font-size: 15px;
+  color: var(--doc-text-secondary);
+}
+
+.docs-search {
+  width: 280px;
+  flex-shrink: 0;
+}
+
+.docs-category {
+  margin-bottom: 48px;
+}
+
+.docs-category-title {
+  margin: 0 0 20px 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--doc-text-primary);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.docs-category-tag {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* 文档卡片 */
+.doc-card {
+  background: var(--doc-bg-secondary);
+  border: 1px solid var(--doc-border-color);
+  border-radius: var(--doc-radius);
+  padding: 24px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.doc-card:hover {
+  border-color: var(--doc-link-color);
+  box-shadow: var(--doc-shadow-md);
+  transform: translateY(-2px);
+}
+
+.doc-card-icon {
+  font-size: 36px;
+  margin-bottom: 16px;
+  line-height: 1;
+}
+
+.doc-card-title {
+  margin: 0 0 8px 0;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--doc-text-primary);
+  line-height: 1.4;
+}
+
+.doc-card-description {
+  margin: 0;
+  font-size: 14px;
+  color: var(--doc-text-secondary);
+  line-height: 1.6;
+  flex: 1;
+}
+
+/* ========================================
+   详情页样式
+   ======================================== */
+.docs-detail {
+  display: flex;
+  gap: 48px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+/* 左侧目录 */
+.docs-toc {
+  width: 220px;
+  flex-shrink: 0;
+  position: sticky;
+  top: 24px;
+  align-self: flex-start;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  padding-left: 16px;
+}
+
+.docs-toc-title {
+  margin: 0 0 12px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--doc-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.docs-toc-item {
+  padding: 6px 12px;
+  cursor: pointer;
+  border-radius: 6px;
+  font-size: 14px;
+  color: var(--doc-text-secondary);
+  margin-bottom: 2px;
+  transition: all 0.15s ease;
+  line-height: 1.5;
+}
+
+.docs-toc-item:hover {
+  background: rgba(22, 119, 255, 0.08);
+  color: var(--doc-link-color);
+}
+
+.docs-toc-item.active {
+  background: rgba(22, 119, 255, 0.12);
+  color: var(--doc-link-color);
+  font-weight: 500;
+}
+
+/* 右侧内容区 */
+.docs-content-wrapper {
+  flex: 1;
+  min-width: 0;
+}
+
+.docs-back-link {
+  margin-bottom: 16px;
+}
+
+.docs-content {
+  background: var(--doc-bg-secondary);
+  border: 1px solid var(--doc-border-color);
+  border-radius: var(--doc-radius);
+  padding: 48px 56px;
+  box-shadow: var(--doc-shadow-sm);
+}
+
+/* ========================================
+   文档内容排版系统
+   ======================================== */
+.doc-root {
+  max-width: 860px;
+  margin: 0 auto;
+  font-size: 16px;
+  line-height: 1.7;
+  color: var(--doc-text-primary);
+}
+
+.doc-lead {
+  font-size: 17px;
+  line-height: 1.6;
+  color: var(--doc-text-secondary);
+  margin-bottom: 32px;
+}
+
+/* 标题层级 */
+.doc-root h1 {
+  font-size: 36px;
+  font-weight: 700;
+  margin: 0 0 24px 0;
+  color: var(--doc-text-primary);
+  line-height: 1.3;
+  border-bottom: 2px solid var(--doc-border-color);
+  padding-bottom: 12px;
+}
+
+.doc-root h2 {
+  font-size: 28px;
+  font-weight: 600;
+  margin: 48px 0 20px 0;
+  color: var(--doc-text-primary);
+  line-height: 1.3;
+  border-bottom: 1px solid var(--doc-border-color);
+  padding-bottom: 8px;
+}
+
+.doc-root h3 {
+  font-size: 22px;
+  font-weight: 600;
+  margin: 36px 0 16px 0;
+  color: var(--doc-text-primary);
+  line-height: 1.4;
+}
+
+.doc-root h4 {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 28px 0 12px 0;
+  color: var(--doc-text-primary);
+  line-height: 1.4;
+}
+
+/* 段落和文本 */
+.doc-root p {
+  margin: 0 0 16px 0;
+  line-height: 1.7;
+}
+
+.doc-root strong {
+  font-weight: 600;
+  color: var(--doc-text-primary);
+}
+
+/* 链接 */
+.doc-root a {
+  color: var(--doc-link-color);
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+
+.doc-root a:hover {
+  color: var(--doc-link-hover);
+  text-decoration: underline;
+}
+
+/* 列表 */
+.doc-root ul,
+.doc-root ol {
+  margin: 0 0 16px 0;
+  padding-left: 28px;
+}
+
+.doc-root li {
+  margin-bottom: 8px;
+  line-height: 1.6;
+}
+
+.doc-root li > ul,
+.doc-root li > ol {
+  margin-top: 8px;
+  margin-bottom: 0;
+}
+
+/* 代码块 */
+.doc-root pre,
+.doc-root .code-block {
+  background: var(--doc-code-bg);
+  border: 1px solid var(--doc-code-border);
+  border-radius: 6px;
+  padding: 16px;
+  margin: 0 0 16px 0;
+  overflow-x: auto;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.doc-root pre code,
+.doc-root .code-block code {
+  font-family: 'Menlo', 'Monaco', 'Consolas', 'Courier New', monospace;
+  font-size: 14px;
+  background: transparent;
+  padding: 0;
+  border: none;
+  color: var(--doc-text-primary);
+}
+
+/* 行内代码 */
+.doc-root code {
+  font-family: 'Menlo', 'Monaco', 'Consolas', 'Courier New', monospace;
+  font-size: 0.9em;
+  background: var(--doc-code-bg);
+  border: 1px solid var(--doc-code-border);
+  border-radius: 4px;
+  padding: 2px 6px;
+  color: #d63384;
+}
+
+/* 表格 */
+.doc-root table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 20px 0;
+  font-size: 15px;
+  background: var(--doc-bg-secondary);
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: var(--doc-shadow-sm);
+}
+
+.doc-root thead {
+  background: var(--doc-code-bg);
+  border-bottom: 2px solid var(--doc-border-color);
+}
+
+.doc-root th {
+  padding: 12px 16px;
+  text-align: left;
+  font-weight: 600;
+  color: var(--doc-text-primary);
+  font-size: 14px;
+}
+
+.doc-root td {
+  padding: 12px 16px;
+  border-top: 1px solid var(--doc-border-color);
+  vertical-align: top;
+}
+
+.doc-root tbody tr:hover {
+  background: rgba(22, 119, 255, 0.02);
+}
+
+/* 图表/示意图 */
+.doc-root .diagram {
+  background: var(--doc-code-bg);
+  border: 1px solid var(--doc-code-border);
+  border-radius: 6px;
+  padding: 20px;
+  margin: 0 0 20px 0;
+  overflow-x: auto;
+  font-family: 'Menlo', 'Monaco', 'Consolas', 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--doc-text-primary);
+}
+
+/* 目录导航 */
+.doc-root .doc-toc {
+  background: var(--doc-code-bg);
+  border: 1px solid var(--doc-code-border);
+  border-radius: 6px;
+  padding: 20px 24px;
+  margin: 0 0 32px 0;
+}
+
+.doc-root .doc-toc strong {
+  display: block;
+  margin-bottom: 12px;
+  font-size: 14px;
+  color: var(--doc-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.doc-root .doc-toc ol {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.doc-root .doc-toc li {
+  margin-bottom: 6px;
+}
+
+.doc-root .doc-toc a {
+  color: var(--doc-link-color);
+  font-size: 15px;
+}
+
+/* Agent 信息表 */
+.doc-root .agent-info {
+  background: var(--doc-code-bg);
+  border: 1px solid var(--doc-code-border);
+  border-radius: 6px;
+  margin: 0 0 20px 0;
+}
+
+.doc-root .agent-info td {
+  padding: 10px 16px;
+  border: none;
+  border-top: 1px solid var(--doc-border-color);
+}
+
+.doc-root .agent-info tr:first-child td {
+  border-top: none;
+}
+
+/* 高亮卡片网格 */
+.doc-root .highlight-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 20px;
+  margin: 0 0 24px 0;
+}
+
+.doc-root .highlight-card {
+  background: var(--doc-bg-secondary);
+  border: 1px solid var(--doc-border-color);
+  border-radius: var(--doc-radius);
+  padding: 20px;
+  box-shadow: var(--doc-shadow-sm);
+}
+
+.doc-root .highlight-card h4 {
+  margin: 0 0 12px 0;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--doc-link-color);
+}
+
+.doc-root .highlight-card p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--doc-text-secondary);
+}
+
+/* 引用块 */
+.doc-root blockquote {
+  border-left: 4px solid var(--doc-link-color);
+  padding: 12px 20px;
+  margin: 0 0 16px 0;
+  background: var(--doc-code-bg);
+  color: var(--doc-text-secondary);
+  font-style: italic;
+}
+
+.doc-root blockquote p {
+  margin: 0;
+}
+
+/* 分隔线 */
+.doc-root hr {
+  border: none;
+  border-top: 1px solid var(--doc-border-color);
+  margin: 32px 0;
+}
+
+/* ========================================
+   响应式适配
+   ======================================== */
+@media (max-width: 1200px) {
+  .docs-toc {
+    width: 200px;
+  }
+  
+  .docs-content {
+    padding: 36px;
+  }
+}
+
+@media (max-width: 992px) {
+  .docs-detail {
+    flex-direction: column;
+  }
+  
+  .docs-toc {
+    width: 100%;
+    position: static;
+    max-height: none;
+    margin-bottom: 24px;
+  }
+  
+  .docs-content {
+    padding: 32px 24px;
+  }
+  
+  .docs-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .docs-search {
+    width: 100%;
+  }
+}
+
+@media (max-width: 768px) {
+  .docs-page {
+    padding: 24px 16px;
+  }
+  
+  .docs-header-title {
+    font-size: 28px;
+  }
+  
+  .doc-root h1 {
+    font-size: 30px;
+  }
+  
+  .doc-root h2 {
+    font-size: 24px;
+  }
+  
+  .doc-root h3 {
+    font-size: 20px;
+  }
+  
+  .docs-content {
+    padding: 24px 20px;
+  }
+  
+  .doc-root .highlight-grid {
+    grid-template-columns: 1fr;
+  }
+}

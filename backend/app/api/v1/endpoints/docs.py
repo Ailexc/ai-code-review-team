@@ -24,10 +24,10 @@ DOCS_CATALOG = [
     },
     {
         "id": "multi-agent-orchestration",
-        "title": "多 Agent 并行编排",
+        "title": "多 Agent 编排（CrewAI Flows + Crews 双层架构）",
         "category": "architecture",
         "category_label": "架构设计",
-        "description": "asyncio.gather 并行 + 结果去重聚合",
+        "description": "外层 Flow 确定性编排 + 内层 Crew 自主协作（学习核心）",
         "icon": "🔀",
     },
     {

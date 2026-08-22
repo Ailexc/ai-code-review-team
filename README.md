@@ -1,14 +1,16 @@
 # AI Code Review Team
 
-多 Agent 协作代码审查系统 — 支持 4 个专业 Agent 并行审查、实时进度、增量审查与结构化报告。
+多 Agent 协作代码审查系统 — 基于 **CrewAI Flows + Crews 双层架构**，6 个专业 Agent 并行审查、实时进度、增量审查与结构化报告。
 
 ## 功能特性
 
-- **4 个专业 Agent 并行审查**（`full` 类型并发运行 + 结果去重聚合）
+- **6 个专业 Agent 并行审查**（`full` 类型并发运行 + 结果去重聚合）
   - 🔒 安全审查：Semgrep 静态分析 + LLM 语义分析
   - 📐 代码规范：Ruff 静态检查 + LLM 命名/复杂度/重复代码点评
   - 📦 依赖审查：pip-audit 漏洞扫描 + npm registry 过时检测 + LLM 风险点评
   - 🧪 测试覆盖：AST 未测试函数识别 + LLM 测试建议
+  - ⚡ 性能分析：AST 数据库调用模式 + LLM 性能反模式判断
+  - 🧬 Git 变更审查：变更文件分析 + LLM 变更风险点评
 - **实时进度**：WebSocket 推送 Agent 启动/完成、审查结果与健康度（含事件历史回放）
 - **增量审查**：基于 Git diff 只审查变更文件（贴合 PR 场景，控制 token 成本）
 - **健康度评分**：基于 findings 的 0-100 负分制，随审查更新项目健康度
@@ -68,13 +70,13 @@ cd backend && python -m pytest tests/ -v
 
 | 组件 | 技术 |
 |------|------|
-| 多 Agent 编排 | CrewAI Flows（双层骨架） + asyncio 并行 |
+| 多 Agent 编排 | **CrewAI Flows + Crews 双层架构**（唯一编排方式，无降级/替代路径） |
 | 后端 | FastAPI + SQLAlchemy + SQLite (aiosqlite) |
 | 前端 | React + TypeScript + Vite + Ant Design |
-| 静态分析 | Semgrep + Ruff + pip-audit + AST |
+| 静态分析 | Semgrep + Ruff + pip-audit + AST（经 CrewAI Agent 工具调用） |
 | LLM | OpenAI 兼容 API（默认 MIMO mimo-v2.5） |
 | 实时通信 | WebSocket |
-| 可观测性 | structlog 结构化日志（Langfuse 可选） |
+| 可观测性 | structlog 结构化日志 |
 
 ## 项目结构
 
@@ -82,8 +84,8 @@ cd backend && python -m pytest tests/ -v
 AICodeReviewTeam/
 ├── backend/
 │   ├── app/
-│   │   ├── agents/        # 4 个 Agent + 共享 LLM 客户端/工具
-│   │   ├── flows/         # CrewAI Flows 编排骨架
+│   │   ├── agents/        # 6 个专业 Agent（CrewAI 角色）
+│   │   ├── flows/         # CrewAI Flows 外层编排（主路径）
 │   │   ├── services/      # 审查编排/报告/健康度/进度/diff解析
 │   │   ├── api/v1/        # REST + WebSocket 端点
 │   │   ├── triggers/      # 触发器（目录/粘贴/上传/CLI）
@@ -106,7 +108,12 @@ AICodeReviewTeam/
 
 ## 架构理念
 
-**确定性工具兜底 + LLM 补充**：每个 Agent 先用确定性工具（Semgrep/Ruff/pip-audit/AST）做第一道检查，再用 LLM 做语义补充，不完全依赖 LLM，保证准确性。
+**CrewAI Flows + Crews 双层架构（路线焊死，学习项目核心）**：
+- **外层 Flow**：用 `@start/@listen/@router` 装饰器做确定性编排（解析 → 分派 → 运行 → 聚合 → 报告），状态用 Pydantic model 管理，白盒可调试；
+- **内层 Crew**：每个专业 Agent 以 CrewAI `Agent + Task + Crew` 定义，通过工具调用（Semgrep/Ruff/pip-audit/AST）完成自主审查，上下文隔离；
+- **确定性工具兜底 + LLM 补充**：工具做第一道检查，LLM 做语义补充，不完全依赖 LLM。
+
+> ⚠️ **本项目禁止**：手写 asyncio.gather 编排替代 CrewAI、保留"降级路径"、把 Flow 当可选骨架。这是学习 CrewAI 的项目，编排方式只有 CrewAI Flows + Crews 一种。
 
 ## License
 

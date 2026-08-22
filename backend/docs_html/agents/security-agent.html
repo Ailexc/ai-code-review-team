@@ -1,23 +1,23 @@
-<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 900px; line-height: 1.8; color: #333;">
+<div class="doc-root">
 <h1 id="top">🛡️ 安全审查 Agent</h1>
 
-<div style="background: #e6f7ff; padding: 16px; border-radius: 8px; border-left: 4px solid #1677ff; margin: 16px 0;">
+<div class="info-box">
 <strong>📦 工具链：</strong>Semgrep + LLM &nbsp;&nbsp;|&nbsp;&nbsp;
 <strong>⏱️ 预计耗时：</strong>60-90s &nbsp;&nbsp;|&nbsp;&nbsp;
 <strong>📊 输出：</strong>severity 分级的漏洞列表 + 修复建议
 </div>
 
-<nav style="background: #fafafa; padding: 16px; border-radius: 8px; margin: 16px 0;">
+<nav class="doc-toc">
 <strong>📑 目录</strong>
 <ul>
-<li><a href="#overview" style="color: #1677ff;">1. 功能概述</a></li>
-<li><a href="#architecture" style="color: #1677ff;">2. 架构设计</a></li>
-<li><a href="#semgrep" style="color: #1677ff;">3. Semgrep 静态分析</a></li>
-<li><a href="#llm" style="color: #1677ff;">4. LLM 智能分析</a></li>
-<li><a href="#rules" style="color: #1677ff;">5. 检测规则详解</a></li>
-<li><a href="#output" style="color: #1677ff;">6. 输出格式</a></li>
-<li><a href="#example" style="color: #1677ff;">7. 实际案例</a></li>
-<li><a href="#config" style="color: #1677ff;">8. 配置说明</a></li>
+<li><a href="#overview">1. 功能概述</a></li>
+<li><a href="#architecture">2. 架构设计</a></li>
+<li><a href="#semgrep">3. Semgrep 静态分析</a></li>
+<li><a href="#llm">4. LLM 智能分析</a></li>
+<li><a href="#rules">5. 检测规则详解</a></li>
+<li><a href="#output">6. 输出格式</a></li>
+<li><a href="#example">7. 实际案例</a></li>
+<li><a href="#config">8. 配置说明</a></li>
 </ul>
 </nav>
 
@@ -29,41 +29,56 @@
 </ol>
 
 <h2 id="architecture">2. 架构设计</h2>
-<pre style="background: #f6f8fa; padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 13px; line-height: 1.6;">
-┌─────────────────────────────────────────────────────────────┐
-│                    SecurityAgent                            │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│  ┌─────────────────────┐    ┌─────────────────────┐        │
-│  │  Semgrep 静态分析   │    │   LLM 语义分析      │        │
-│  │                     │    │                     │        │
-│  │  • p/python         │    │  • 代码安全审查     │        │
-│  │  • p/flask          │    │  • OWASP Top 10     │        │
-│  │  • p/django         │    │  • 逻辑漏洞检测     │        │
-│  │  • p/sqlalchemy     │    │  • 修复建议生成     │        │
-│  │  • p/bandit         │    │                     │        │
-│  └──────────┬──────────┘    └──────────┬──────────┘        │
-│             │                          │                    │
-│             └──────────┬───────────────┘                    │
-│                        ▼                                    │
-│              ┌─────────────────┐                            │
-│              │   结果去重聚合  │                            │
-│              │  (rule_id +     │                            │
-│              │   file + line)  │                            │
-│              └─────────────────┘                            │
-└─────────────────────────────────────────────────────────────┘
-</pre>
+<svg class="diagram-svg" viewBox="0 0 800 500" xmlns="http://www.w3.org/2000/svg">
+  <!-- 外框 -->
+  <rect x="50" y="20" width="700" height="460" rx="8" fill="#f8f9fa" stroke="#2196f3" stroke-width="2"/>
+  <text x="400" y="50" text-anchor="middle" font-size="18" font-weight="bold" fill="#1976d2">SecurityAgent</text>
+  
+  <!-- Semgrep 静态分析 -->
+  <rect x="80" y="100" width="280" height="200" rx="6" fill="#e3f2fd" stroke="#2196f3" stroke-width="2"/>
+  <text x="220" y="130" text-anchor="middle" font-size="16" font-weight="600" fill="#1976d2">Semgrep 静态分析</text>
+  <text x="100" y="160" font-size="13" fill="#333">• p/python</text>
+  <text x="100" y="180" font-size="13" fill="#333">• p/flask</text>
+  <text x="100" y="200" font-size="13" fill="#333">• p/django</text>
+  <text x="100" y="220" font-size="13" fill="#333">• p/sqlalchemy</text>
+  <text x="100" y="240" font-size="13" fill="#333">• p/bandit</text>
+  
+  <!-- LLM 语义分析 -->
+  <rect x="440" y="100" width="280" height="200" rx="6" fill="#fff3e0" stroke="#ff9800" stroke-width="2"/>
+  <text x="580" y="130" text-anchor="middle" font-size="16" font-weight="600" fill="#f57c00">LLM 语义分析</text>
+  <text x="460" y="160" font-size="13" fill="#333">• 代码安全审查</text>
+  <text x="460" y="180" font-size="13" fill="#333">• OWASP Top 10</text>
+  <text x="460" y="200" font-size="13" fill="#333">• 逻辑漏洞检测</text>
+  <text x="460" y="220" font-size="13" fill="#333">• 修复建议生成</text>
+  
+  <!-- 结果去重聚合 -->
+  <rect x="250" y="360" width="300" height="100" rx="6" fill="#e8f5e9" stroke="#4caf50" stroke-width="2"/>
+  <text x="400" y="390" text-anchor="middle" font-size="16" font-weight="600" fill="#2e7d32">结果去重聚合</text>
+  <text x="400" y="415" text-anchor="middle" font-size="13" fill="#666">(rule_id + file + line)</text>
+  
+  <!-- 连接线 -->
+  <line x1="220" y1="300" x2="350" y2="360" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="580" y1="300" x2="450" y2="360" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+  
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#666"/>
+    </marker>
+  </defs>
+</svg>
 
 <h2 id="semgrep">3. Semgrep 静态分析</h2>
 <p>Semgrep 是一个开源的静态分析工具，支持多种语言和规则集。本 Agent 根据项目语言自动选择合适的规则集：</p>
 
-<table style="border-collapse: collapse; width: 100%; margin: 16px 0;">
-<tr style="background: #f6f8fa;"><th style="padding: 8px; border: 1px solid #ddd;">语言</th><th style="padding: 8px; border: 1px solid #ddd;">规则集</th><th style="padding: 8px; border: 1px solid #ddd;">说明</th></tr>
-<tr><td style="padding: 8px; border: 1px solid #ddd;">Python</td><td style="padding: 8px; border: 1px solid #ddd;">p/python, p/flask, p/django, p/sqlalchemy, p/bandit</td><td style="padding: 8px; border: 1px solid #ddd;">覆盖 Web 框架、ORM、安全审计</td></tr>
-<tr><td style="padding: 8px; border: 1px solid #ddd;">JavaScript</td><td style="padding: 8px; border: 1px solid #ddd;">p/javascript, p/nodejs, p/react, p/expressjs</td><td style="padding: 8px; border: 1px solid #ddd;">覆盖 Node.js、React、Express</td></tr>
-<tr><td style="padding: 8px; border: 1px solid #ddd;">TypeScript</td><td style="padding: 8px; border: 1px solid #ddd;">p/typescript, p/nodejs, p/react, p/expressjs</td><td style="padding: 8px; border: 1px solid #ddd;">TypeScript 专用规则</td></tr>
-<tr><td style="padding: 8px; border: 1px solid #ddd;">Java</td><td style="padding: 8px; border: 1px solid #ddd;">p/java, p/spring</td><td style="padding: 8px; border: 1px solid #ddd;">Spring 框架安全规则</td></tr>
-<tr><td style="padding: 8px; border: 1px solid #ddd;">Go</td><td style="padding: 8px; border: 1px solid #ddd;">p/golang</td><td style="padding: 8px; border: 1px solid #ddd;">Go 语言安全规则</td></tr>
+<table>
+<thead><tr><th>语言</th><th>规则集</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td>Python</td><td>p/python, p/flask, p/django, p/sqlalchemy, p/bandit</td><td>覆盖 Web 框架、ORM、安全审计</td></tr>
+<tr><td>JavaScript</td><td>p/javascript, p/nodejs, p/react, p/expressjs</td><td>覆盖 Node.js、React、Express</td></tr>
+<tr><td>TypeScript</td><td>p/typescript, p/nodejs, p/react, p/expressjs</td><td>TypeScript 专用规则</td></tr>
+<tr><td>Java</td><td>p/java, p/spring</td><td>Spring 框架安全规则</td></tr>
+<tr><td>Go</td><td>p/golang</td><td>Go 语言安全规则</td></tr>
+</tbody>
 </table>
 
 <h2 id="llm">4. LLM 智能分析</h2>
@@ -78,19 +93,21 @@
 </ul>
 
 <h2 id="rules">5. 检测规则详解</h2>
-<table style="border-collapse: collapse; width: 100%; margin: 16px 0;">
-<tr style="background: #f6f8fa;"><th style="padding: 8px; border: 1px solid #ddd;">规则 ID</th><th style="padding: 8px; border: 1px solid #ddd;">检测项</th><th style="padding: 8px; border: 1px solid #ddd;">严重度</th><th style="padding: 8px; border: 1px solid #ddd;">说明</th></tr>
-<tr><td style="padding: 8px; border: 1px solid #ddd;">SEC-SQL</td><td style="padding: 8px; border: 1px solid #ddd;">SQL 注入</td><td style="padding: 8px; border: 1px solid #ddd; color: red;">critical</td><td style="padding: 8px; border: 1px solid #ddd;">动态拼接 SQL 语句</td></tr>
-<tr><td style="padding: 8px; border: 1px solid #ddd;">SEC-CMD</td><td style="padding: 8px; border: 1px solid #ddd;">命令注入</td><td style="padding: 8px; border: 1px solid #ddd; color: red;">critical</td><td style="padding: 8px; border: 1px solid #ddd;">用户输入传入系统命令</td></tr>
-<tr><td style="padding: 8px; border: 1px solid #ddd;">SEC-XSS</td><td style="padding: 8px; border: 1px solid #ddd;">XSS</td><td style="padding: 8px; border: 1px solid #ddd; color: #faad14;">warning</td><td style="padding: 8px; border: 1px solid #ddd;">未转义的用户输入输出</td></tr>
-<tr><td style="padding: 8px; border: 1px solid #ddd;">SEC-HARDCODE</td><td style="padding: 8px; border: 1px solid #ddd;">硬编码密码</td><td style="padding: 8px; border: 1px solid #ddd; color: #faad14;">warning</td><td style="padding: 8px; border: 1px solid #ddd;">代码中直接写入密码/token</td></tr>
-<tr><td style="padding: 8px; border: 1px solid #ddd;">SEC-EVAL</td><td style="padding: 8px; border: 1px solid #ddd;">eval 使用</td><td style="padding: 8px; border: 1px solid #ddd; color: #faad14;">warning</td><td style="padding: 8px; border: 1px solid #ddd;">动态代码执行风险</td></tr>
-<tr><td style="padding: 8px; border: 1px solid #ddd;">LLM-SEC</td><td style="padding: 8px; border: 1px solid #ddd;">LLM 语义分析</td><td style="padding: 8px; border: 1px solid #ddd; color: #1677ff;">suggestion</td><td style="padding: 8px; border: 1px solid #ddd;">LLM 发现的逻辑漏洞</td></tr>
+<table>
+<thead><tr><th>规则 ID</th><th>检测项</th><th>严重度</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td>SEC-SQL</td><td>SQL 注入</td><td class="severity-critical">critical</td><td>动态拼接 SQL 语句</td></tr>
+<tr><td>SEC-CMD</td><td>命令注入</td><td class="severity-critical">critical</td><td>用户输入传入系统命令</td></tr>
+<tr><td>SEC-XSS</td><td>XSS</td><td class="severity-warning">warning</td><td>未转义的用户输入输出</td></tr>
+<tr><td>SEC-HARDCODE</td><td>硬编码密码</td><td class="severity-warning">warning</td><td>代码中直接写入密码/token</td></tr>
+<tr><td>SEC-EVAL</td><td>eval 使用</td><td class="severity-warning">warning</td><td>动态代码执行风险</td></tr>
+<tr><td>LLM-SEC</td><td>LLM 语义分析</td><td class="severity-suggestion">suggestion</td><td>LLM 发现的逻辑漏洞</td></tr>
+</tbody>
 </table>
 
 <h2 id="output">6. 输出格式</h2>
 <p>每个 finding 包含以下字段：</p>
-<pre style="background: #f6f8fa; padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 13px;">
+<pre class="code-block">
 {
     "rule_id": "SEC-SQL",
     "severity": "critical",
@@ -104,7 +121,7 @@
 
 <h2 id="example">7. 实际案例</h2>
 <h3>❌ 不安全代码</h3>
-<pre style="background: #fff1f0; padding: 12px; border-radius: 6px; border-left: 3px solid #ff4d4f;"><code>import os
+<pre class="code-bad"><code>import os
 
 def get_user(user_id):
     # SQL 注入风险
@@ -116,7 +133,7 @@ def get_user(user_id):
     return session.execute(query)</code></pre>
 
 <h3>✅ 修复后</h3>
-<pre style="background: #f6ffed; padding: 12px; border-radius: 6px; border-left: 3px solid #52c41a;"><code>import subprocess
+<pre class="code-good"><code>import subprocess
 from sqlalchemy import text
 
 def get_user(user_id):
@@ -136,9 +153,9 @@ def get_user(user_id):
 <li><strong>文件数量限制</strong>：最多 50 个文件</li>
 </ul>
 
-<div style="background: #fff7e6; padding: 16px; border-radius: 8px; border-left: 4px solid #faad14; margin: 16px 0;">
-<strong>💡 提示：</strong>如果项目中未安装 Semgrep，Agent 会自动降级到仅使用 LLM 分析。建议在 Docker 环境中预装 Semgrep 以获得最佳效果。
+<div class="tip-box">
+<strong>💡 提示：</strong>如果项目中未安装 Semgrep，Agent 仅执行 LLM 语义分析（确定性工具为空，审查深度下降）。建议在 Docker 环境中预装 Semgrep 以获得最佳效果。
 </div>
 
-<p style="text-align: center; margin-top: 40px;"><a href="#top" style="color: #1677ff;">⬆️ 返回顶部</a></p>
+<p class="back-to-top"><a href="#top">⬆️ 返回顶部</a></p>
 </div>

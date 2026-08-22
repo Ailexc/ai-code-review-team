@@ -1,5 +1,18 @@
 # 多Agent协作代码审查系统 - 开发计划
 
+> ## ⚠️ 路线焊死声明（2026-08-22 修订，不可更改）
+>
+> 本项目是 **CrewAI 学习项目**，多 Agent 编排**只能**采用 **CrewAI Flows + Crews 双层架构**：
+> - **外层 Flow**：`@start/@listen/@router` 确定性编排（解析 → 分派 → 运行 → 聚合 → 报告），状态用 Pydantic model 管理；
+> - **内层 Crew**：每个专业 Agent 以 CrewAI `Agent + Task + Crew` 定义，工具（Semgrep/Ruff/pip-audit/AST）经 CrewAI 工具调用。
+>
+> **本项目明确禁止**：
+> 1. 手写 `asyncio.gather` 或任何自研编排逻辑替代 CrewAI；
+> 2. 任何"降级路径"（如 CrewAI 不可用时退回手写编排）；
+> 3. 把 CrewAI Flow 当作"可选骨架/实验性代码"。
+>
+> 历史教训：开发过程中曾以"配置脆弱、快速交付"为由私自切到 asyncio.gather 手搓编排，导致偏离立项路线 100%、产生僵尸依赖与文档认知混乱。**此路线一经焊死，任何变更必须经过项目负责人书面批准。**
+
 ## 1. 项目概述
 
 构建一个多Agent协作的代码审查系统，支持多种触发方式，重点优化本地开发和演示体验。系统将模拟真实Code Review流程，通过多个专业Agent并行审查代码，最后生成结构化审查报告。
@@ -421,8 +434,8 @@ class ReportGenerator:
 
 #### 6.2.2 技术实现
 1. **Agent框架**
-   - CrewAI角色定义与工具配置
-   - Flows + Crews 双层架构（外层确定性编排 + 内层Agent自主协作）
+   - CrewAI 角色定义与工具配置（**必做，禁止手写 Agent 基类替代**）
+   - Flows + Crews 双层架构（外层确定性编排 + 内层Agent自主协作，**生产主路径，无降级**）
    - Agent通信协议
 
 2. **任务调度**
@@ -524,7 +537,7 @@ class ReportGenerator:
 - **构建工具**：Vite（快速开发体验）
 
 ### 7.3 AI/ML技术
-- **多Agent框架**：CrewAI（Flows事件驱动编排 + Crews角色自主协作 双层架构）
+- **多Agent框架**：**CrewAI（Flows事件驱动编排 + Crews角色自主协作 双层架构）—— 唯一路线，禁止手写编排/降级路径**
 - **LLM**：GPT-4o（主Agent）+ DeepSeek-chat（代码分析）
 - **静态分析**：Semgrep、Ruff、Pylint
 - **代码解析**：AST、tree-sitter
@@ -541,7 +554,7 @@ class ReportGenerator:
 |------|------|----------|
 | LLM API调用延迟 | 审查速度慢 | 1. 并行调用<br>2. 结果缓存<br>3. 本地模型备选 |
 | 静态分析工具集成复杂 | 开发周期延长 | 1. 分阶段集成<br>2. 优先核心工具<br>3. 社区资源利用 |
-| 多Agent协调困难 | 系统稳定性差 | 1. Flows + Crews 双层控制<br>2. 超时机制<br>3. 降级策略 |
+| 多Agent协调困难 | 系统稳定性差 | 1. Flows + Crews 双层控制<br>2. 超时机制<br>3. 坚持 CrewAI 路线（禁止退回手写编排，只允许在 CrewAI 框架内调参/降级） |
 | LLM结构化输出不稳定 | 审查结论质量差 | 1. Pydantic schema约束<br>2. 输出校验+自动重试<br>3. 解析兜底 |
 
 ### 8.2 业务风险

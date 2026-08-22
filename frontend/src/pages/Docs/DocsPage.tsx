@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Card, Spin, Typography, Empty, Row, Col, Tag, Input, Button } from 'antd';
+import { Spin, Empty, Row, Col, Tag, Input, Button } from 'antd';
 import { BookOutlined, SearchOutlined, ArrowLeftOutlined } from '@ant-design/icons';
 import { useSearchParams } from 'react-router-dom';
 import api from '@/api/index';
+import './DocsPage.css';
 
 interface DocMeta {
   id: string;
@@ -91,17 +92,28 @@ export default function DocsPage() {
 
   // 监听滚动，高亮当前目录项
   useEffect(() => {
-    if (!selectedDoc || !contentRef.current) return;
-    // 找到实际的滚动容器（最近的 overflow:auto/scroll 祖先）
-    let scrollContainer: Element | null = contentRef.current.parentElement;
-    while (scrollContainer && getComputedStyle(scrollContainer).overflow !== 'auto' && getComputedStyle(scrollContainer).overflow !== 'scroll') {
-      scrollContainer = scrollContainer.parentElement;
+    // 必须在 loading 完成后 contentRef 才指向实际内容
+    if (!selectedDoc || loading || !contentRef.current) return;
+
+    const contentEl = contentRef.current;
+
+    // 从内容元素向上查找 overflow 为 auto/scroll 的滚动容器
+    // MainLayout 中 <Layout style={{ overflow: 'auto' }}> 就是实际滚动容器
+    let scrollContainer: Element | null = null;
+    let parent: Element | null = contentEl.parentElement;
+    while (parent) {
+      const style = getComputedStyle(parent);
+      if (style.overflow === 'auto' || style.overflow === 'scroll') {
+        scrollContainer = parent;
+        break;
+      }
+      parent = parent.parentElement;
     }
-    const target = scrollContainer || document;
+
+    if (!scrollContainer) return;
 
     const handleScroll = () => {
-      const headings = contentRef.current?.querySelectorAll('[id]');
-      if (!headings) return;
+      const headings = contentEl.querySelectorAll('h2[id], h3[id], h4[id]');
       let currentId = '';
       headings.forEach((heading) => {
         const rect = heading.getBoundingClientRect();
@@ -109,13 +121,19 @@ export default function DocsPage() {
           currentId = heading.id;
         }
       });
-      if (currentId && currentId !== activeTocId) {
+      if (currentId) {
         setActiveTocId(currentId);
       }
     };
-    target.addEventListener('scroll', handleScroll, { passive: true });
-    return () => target.removeEventListener('scroll', handleScroll);
-  }, [selectedDoc, activeTocId]);
+
+    scrollContainer.addEventListener('scroll', handleScroll, { passive: true });
+    // 初始计算一次，确保进入页面时就有高亮
+    handleScroll();
+
+    return () => {
+      scrollContainer!.removeEventListener('scroll', handleScroll);
+    };
+  }, [selectedDoc, loading]);
 
   // 点击目录跳转
   const handleTocClick = (id: string) => {
@@ -162,57 +180,46 @@ export default function DocsPage() {
   // 详情页模式
   if (selectedDoc) {
     return (
-      <div style={{ display: 'flex', gap: 24 }}>
-        {/* 左侧目录 */}
-        {toc.length > 0 && (
-          <div style={{ width: 200, flexShrink: 0, position: 'sticky', top: 0, alignSelf: 'flex-start' }}>
-            <Card
-              size="small"
-              title="📑 目录"
-              styles={{ body: { padding: '8px 12px' } }}
-            >
+      <div className="docs-page">
+        <div className="docs-detail">
+          {/* 左侧目录 */}
+          {toc.length > 0 && (
+            <div className="docs-toc">
+              <div className="docs-toc-title">目录</div>
               <div ref={tocRef}>
                 {toc.map(item => (
                   <div
                     key={item.id}
+                    className={`docs-toc-item${activeTocId === item.id ? ' active' : ''}`}
                     onClick={() => handleTocClick(item.id)}
-                    style={{
-                      padding: '4px 8px',
-                      cursor: 'pointer',
-                      borderRadius: 4,
-                      fontSize: 13,
-                      color: activeTocId === item.id ? '#1677ff' : '#666',
-                      background: activeTocId === item.id ? '#e6f7ff' : 'transparent',
-                      fontWeight: activeTocId === item.id ? 500 : 400,
-                      marginBottom: 2,
-                      transition: 'all 0.2s',
-                    }}
                   >
                     {item.text}
                   </div>
                 ))}
               </div>
-            </Card>
-          </div>
-        )}
+            </div>
+          )}
 
-        {/* 右侧内容 */}
-        <div style={{ flex: 1 }}>
-          <Button
-            type="link"
-            icon={<ArrowLeftOutlined />}
-            onClick={handleBackToList}
-            style={{ marginBottom: 12, padding: 0 }}
-          >
-            返回文档列表
-          </Button>
-          <Card>
-            {loading ? (
-              <Spin style={{ display: 'block', marginTop: 100 }} />
-            ) : (
-              <div ref={contentRef} dangerouslySetInnerHTML={{ __html: selectedDoc.html }} />
-            )}
-          </Card>
+          {/* 右侧内容 */}
+          <div className="docs-content-wrapper">
+            <div className="docs-back-link">
+              <Button
+                type="link"
+                icon={<ArrowLeftOutlined />}
+                onClick={handleBackToList}
+                style={{ padding: 0 }}
+              >
+                返回文档列表
+              </Button>
+            </div>
+            <div className="docs-content">
+              {loading ? (
+                <Spin style={{ display: 'block', marginTop: 100 }} />
+              ) : (
+                <div ref={contentRef} dangerouslySetInnerHTML={{ __html: selectedDoc.html }} />
+              )}
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -220,46 +227,39 @@ export default function DocsPage() {
 
   // 列表页模式（卡片式）
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+    <div className="docs-page">
+      <div className="docs-header">
         <div>
-          <h1 style={{ marginBottom: 4 }}><BookOutlined /> 系统文档</h1>
-          <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+          <h1 className="docs-header-title">
+            <BookOutlined /> 系统文档
+          </h1>
+          <p className="docs-header-subtitle">
             系统架构设计、Agent 知识点、使用指南等技术文档。
-          </Typography.Paragraph>
+          </p>
         </div>
         <Input
+          className="docs-search"
           placeholder="搜索文档..."
           prefix={<SearchOutlined />}
           value={searchText}
           onChange={e => setSearchText(e.target.value)}
-          style={{ width: 260 }}
           allowClear
         />
       </div>
 
       {Object.entries(filteredCategories).map(([label, items]) => (
-        <div key={label} style={{ marginBottom: 32 }}>
-          <Typography.Title level={4} style={{ marginBottom: 16 }}>
-            <Tag color={CATEGORY_COLORS[label] || '#666'} style={{ fontSize: 13 }}>{label}</Tag>
-          </Typography.Title>
+        <div key={label} className="docs-category">
+          <h2 className="docs-category-title">
+            <Tag color={CATEGORY_COLORS[label] || '#666'} className="docs-category-tag">{label}</Tag>
+          </h2>
           <Row gutter={[16, 16]}>
             {items.map(doc => (
               <Col xs={24} sm={12} lg={8} key={doc.id}>
-                <Card
-                  hoverable
-                  onClick={() => handleSelectDoc(doc)}
-                  styles={{
-                    body: { padding: 20 },
-                  }}
-                  style={{ height: '100%' }}
-                >
-                  <div style={{ fontSize: 32, marginBottom: 12 }}>{doc.icon}</div>
-                  <Typography.Title level={5} style={{ marginBottom: 8 }}>{doc.title}</Typography.Title>
-                  <Typography.Paragraph type="secondary" style={{ marginBottom: 0, fontSize: 13 }}>
-                    {doc.description}
-                  </Typography.Paragraph>
-                </Card>
+                <div className="doc-card" onClick={() => handleSelectDoc(doc)}>
+                  <div className="doc-card-icon">{doc.icon}</div>
+                  <h3 className="doc-card-title">{doc.title}</h3>
+                  <p className="doc-card-description">{doc.description}</p>
+                </div>
               </Col>
             ))}
           </Row>

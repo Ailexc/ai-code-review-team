@@ -1,82 +1,1062 @@
-<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 900px; line-height: 1.8; color: #333;">
-<h1 id="top">🌐 系统架构总览</h1>
+<div class="doc-root">
 
-<nav style="background: #fafafa; padding: 16px; border-radius: 8px; margin: 16px 0;">
-<strong>📑 目录</strong>
-<ul>
-<li><a href="#positioning" style="color: #1677ff;">1. 项目定位</a></li>
-<li><a href="#principles" style="color: #1677ff;">2. 核心设计原则</a></li>
-<li><a href="#architecture" style="color: #1677ff;">3. 系统架构图</a></li>
-<li><a href="#dataflow" style="color: #1677ff;">4. 数据流</a></li>
-<li><a href="#techstack" style="color: #1677ff;">5. 技术栈</a></li>
-</ul>
+<h1 id="top">系统架构总览</h1>
+
+<p class="doc-lead">本文档从项目定位、设计原则、分层架构、Agent 详解、数据模型、API 设计、实时通信、健康度评分、LLM 集成、上下文引擎、指标与审计、技术选型等维度，全面剖析本系统的技术实现。每个章节均关联到实际代码路径，便于对照源码深入学习。</p>
+
+<nav class="doc-toc">
+<strong>目录</strong>
+<ol>
+<li><a href="#learning-path">学习路线图</a></li>
+<li><a href="#value-points">项目亮点与价值点</a></li>
+<li><a href="#positioning">项目定位与系统上下文</a></li>
+<li><a href="#principles">核心设计原则</a></li>
+<li><a href="#layered-arch">分层架构详解</a></li>
+<li><a href="#agent-detail">6 大 Agent 详解</a></li>
+<li><a href="#data-model">数据模型与存储</a></li>
+<li><a href="#api-design">API 设计</a></li>
+<li><a href="#realtime">实时通信架构</a></li>
+<li><a href="#health-score">健康度评分模型</a></li>
+<li><a href="#llm-integration">LLM 集成架构</a></li>
+<li><a href="#context-engine">上下文引擎</a></li>
+<li><a href="#metrics-audit">指标收集与审计日志</a></li>
+<li><a href="#tech-decisions">技术选型与决策</a></li>
+<li><a href="#project-structure">项目目录结构</a></li>
+<li><a href="#glossary">术语表</a></li>
+</ol>
 </nav>
 
-<h2 id="positioning">1. 项目定位</h2>
-<p>构建一个<strong>多 Agent 协作代码审查系统</strong>，模拟真实 Code Review 流程。用户提交代码，系统触发多个专业 Agent 并行审查，由主 Agent 汇总生成结构化审查报告。</p>
+<!-- ============================================================ -->
+<!-- 1. 学习路线图                                                   -->
+<!-- ============================================================ -->
+<h2 id="learning-path">1. 学习路线图</h2>
 
-<h2 id="principles">2. 核心设计原则</h2>
+<h3>前置知识</h3>
 <ul>
-<li><strong>确定性工具兜底 + LLM 语义补充</strong>：Semgrep/Ruff/pip-audit/AST 确保基础检测不漏，LLM 补充语义理解和修复建议</li>
-<li><strong>6 Agent 并行编排</strong>：asyncio.gather 并行执行，结果去重聚合，最小化审查时间</li>
-<li><strong>可验证维度</strong>：每个 Agent 聚焦可验证的代码质量维度（安全/规范/依赖/覆盖/性能/Git）</li>
+<li><strong>Python 异步编程</strong>：asyncio、async/await、asyncio.gather 并发模式</li>
+<li><strong>FastAPI 基础</strong>：路由、依赖注入、Pydantic 模型、中间件</li>
+<li><strong>SQLAlchemy 2.0</strong>：Mapped 类型注解、异步 Session（AsyncSession）</li>
+<li><strong>React + TypeScript</strong>：Hooks、React Router、Ant Design 组件</li>
+<li><strong>静态分析工具</strong>：了解 Semgrep、Ruff、pip-audit 的基本用法</li>
 </ul>
 
-<h2 id="architecture">3. 系统架构图</h2>
-<pre style="background: #f6f8fa; padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 13px; line-height: 1.6;">
-┌─────────────────────────────────────────────────┐
-│                   用户层                         │
-│   Web UI (React)  │  CLI  │  REST API            │
-└────────────────────┬────────────────────────────┘
-                     │
-┌────────────────────▼────────────────────────────┐
-│                 API 网关层                       │
-│          FastAPI + 路由 + 请求验证               │
-└────────────────────┬────────────────────────────┘
-                     │
-┌────────────────────▼────────────────────────────┐
-│               业务逻辑层                         │
-│  项目管理 │ 审查调度 │ Finding 状态管理          │
-└────────────────────┬────────────────────────────┘
-                     │
-┌────────────────────▼────────────────────────────┐
-│              AI Agent 层（6 个并行）             │
-│  ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐          │
-│  │安全  │ │规范  │ │依赖  │ │覆盖  │          │
-│  │审查  │ │审查  │ │审查  │ │审查  │          │
-│  └──────┘ └──────┘ └──────┘ └──────┘          │
-│  ┌──────┐ ┌──────┐                             │
-│  │性能  │ │Git   │                             │
-│  │分析  │ │审查  │                             │
-│  └──────┘ └──────┘                             │
-└────────────────────┬────────────────────────────┘
-                     │
-┌────────────────────▼────────────────────────────┐
-│              外部工具层                          │
-│  Semgrep │ Ruff │ pip-audit │ AST │ GitPython   │
-└─────────────────────────────────────────────────┘
-</pre>
+<h3>推荐阅读顺序</h3>
+<table class="learning-path">
+<thead><tr><th>阶段</th><th>章节</th><th>目标</th></tr></thead>
+<tbody>
+<tr><td>入门</td><td>项目定位 → 设计原则 → 分层架构</td><td>理解系统全貌和设计哲学</td></tr>
+<tr><td>核心</td><td>6 大 Agent 详解 → 数据模型 → API 设计</td><td>掌握核心业务逻辑和数据流</td></tr>
+<tr><td>进阶</td><td>实时通信 → 健康度评分 → LLM 集成 → 上下文引擎</td><td>理解高级特性和工程细节</td></tr>
+<tr><td>深入</td><td>指标与审计 → 技术选型决策 → 目录结构</td><td>了解运维、决策和工程组织</td></tr>
+</tbody>
+</table>
 
-<h2 id="dataflow">4. 数据流</h2>
+<!-- ============================================================ -->
+<!-- 2. 项目亮点与价值点                                             -->
+<!-- ============================================================ -->
+<h2 id="value-points">2. 项目亮点与价值点</h2>
+
+<h3>你将学到什么</h3>
+<ul>
+<li>如何设计一个<strong>多 Agent 并行编排</strong>系统：asyncio.gather 并发、结果聚合、容错降级</li>
+<li>如何实践<strong>"确定性工具兜底 + LLM 语义补充"</strong>的混合架构：工具保证覆盖率，LLM 补充深度</li>
+<li>如何用 AST 静态分析实现<strong>代码性能反模式检测</strong>（N+1 查询、同步阻塞、字符串拼接）</li>
+<li>如何构建<strong>代码库上下文引擎</strong>，为 LLM 分析注入项目级上下文以提升审查质量</li>
+<li>如何实现<strong>内存级事件总线</strong>（发布/订阅 + 历史回放）驱动 WebSocket 实时推送</li>
+<li>如何设计<strong>负分制健康度评分模型</strong>，将多维发现量化为单一质量指标</li>
+<li>如何构建<strong>运行时指标收集器</strong>，跟踪 Review/LLM/Agent 的执行指标和审计日志</li>
+</ul>
+
+<h3>技术亮点</h3>
+<div class="highlight-grid">
+<div class="highlight-card">
+<h4>确定性 + LLM 双层架构</h4>
+<p>每个 Agent 都采用"确定性工具先扫描 → LLM 语义补充"的模式。Semgrep/Ruff/pip-audit/AST 确保基础检测不漏（零漏报），LLM 补充语义理解和修复建议（深度分析）。即使 LLM 不可用，系统仍能正常输出基础审查结果。</p>
+</div>
+<div class="highlight-card">
+<h4>6 Agent 并行编排</h4>
+<p>ReviewService 通过 <code>asyncio.gather()</code> 并发执行所有 Agent，而非串行等待。每个 Agent 独立运行、独立容错，单个 Agent 失败不影响其他 Agent。结果统一聚合、去重、入库。</p>
+</div>
+<div class="highlight-card">
+<h4>AST 深度分析</h4>
+<p>PerformanceAgent 使用 Python AST 模块构建自定义 Visitor，检测循环内 ORM 调用（N+1）、async 函数内同步阻塞、字符串拼接等反模式。TestCoverageAgent 通过 AST 解析测试文件引用关系，识别未测试函数。</p>
+</div>
+<div class="highlight-card">
+<h4>代码库上下文引擎</h4>
+<p>ContextEngine 构建项目级索引（符号表、依赖关系、文件关联），在 LLM 分析前自动注入相关上下文，让 LLM 不仅看到当前文件，还能理解其在项目中的位置和关联，显著提升审查质量。</p>
+</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- 3. 项目定位与系统上下文                                          -->
+<!-- ============================================================ -->
+<h2 id="positioning">3. 项目定位与系统上下文</h2>
+
+<p>本系统是一个<strong>多 Agent 协作代码审查平台</strong>，模拟真实 Code Review 流程。用户通过 Web UI 提交项目路径和审查类型，系统触发多个专业 Agent 并行审查，由编排层汇总生成结构化审查报告和健康度评分。</p>
+
+<h3>系统上下文图</h3>
+<svg class="diagram-svg" viewBox="0 0 900 500" xmlns="http://www.w3.org/2000/svg">
+  <!-- 背景 -->
+  <rect width="900" height="500" fill="#f8f9fa"/>
+  
+  <!-- 外部实体区域 -->
+  <rect x="20" y="20" width="860" height="120" rx="8" fill="#e3f2fd" stroke="#2196f3" stroke-width="2"/>
+  <text x="450" y="45" text-anchor="middle" font-size="16" font-weight="bold" fill="#1976d2">外部实体</text>
+  
+  <!-- 用户 -->
+  <rect x="50" y="70" width="140" height="50" rx="6" fill="#fff" stroke="#2196f3" stroke-width="2"/>
+  <text x="120" y="90" text-anchor="middle" font-size="14" font-weight="600" fill="#333">用户</text>
+  <text x="120" y="108" text-anchor="middle" font-size="12" fill="#666">(Web UI)</text>
+  
+  <!-- LLM API -->
+  <rect x="240" y="70" width="140" height="50" rx="6" fill="#fff" stroke="#2196f3" stroke-width="2"/>
+  <text x="310" y="90" text-anchor="middle" font-size="14" font-weight="600" fill="#333">LLM API</text>
+  <text x="310" y="108" text-anchor="middle" font-size="12" fill="#666">(OpenAI 兼容)</text>
+  
+  <!-- npm registry -->
+  <rect x="430" y="70" width="140" height="50" rx="6" fill="#fff" stroke="#2196f3" stroke-width="2"/>
+  <text x="500" y="90" text-anchor="middle" font-size="14" font-weight="600" fill="#333">npm registry</text>
+  <text x="500" y="108" text-anchor="middle" font-size="12" fill="#666"></text>
+  
+  <!-- 目标项目 -->
+  <rect x="620" y="70" width="140" height="50" rx="6" fill="#fff" stroke="#2196f3" stroke-width="2"/>
+  <text x="690" y="90" text-anchor="middle" font-size="14" font-weight="600" fill="#333">目标项目</text>
+  <text x="690" y="108" text-anchor="middle" font-size="12" fill="#666">(被审查代码)</text>
+  
+  <!-- 连接线 -->
+  <line x1="120" y1="120" x2="120" y2="180" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="135" y="155" font-size="11" fill="#666">HTTP/WS</text>
+  
+  <line x1="310" y1="120" x2="310" y2="180" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="325" y="155" font-size="11" fill="#666">HTTPS</text>
+  
+  <line x1="500" y1="120" x2="500" y2="180" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="515" y="155" font-size="11" fill="#666">HTTPS</text>
+  
+  <line x1="690" y1="120" x2="690" y2="180" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="705" y="155" font-size="11" fill="#666">文件系统</text>
+  
+  <!-- 系统边界 -->
+  <rect x="20" y="180" width="860" height="300" rx="8" fill="#fff3e0" stroke="#ff9800" stroke-width="2"/>
+  <text x="450" y="205" text-anchor="middle" font-size="16" font-weight="bold" fill="#f57c00">AI Code Review Team</text>
+  
+  <!-- React SPA -->
+  <rect x="50" y="240" width="180" height="60" rx="6" fill="#fff" stroke="#4caf50" stroke-width="2"/>
+  <text x="140" y="265" text-anchor="middle" font-size="14" font-weight="600" fill="#333">React SPA</text>
+  <text x="140" y="283" text-anchor="middle" font-size="12" fill="#666">(前端)</text>
+  
+  <!-- FastAPI -->
+  <rect x="280" y="240" width="180" height="60" rx="6" fill="#fff" stroke="#4caf50" stroke-width="2"/>
+  <text x="370" y="265" text-anchor="middle" font-size="14" font-weight="600" fill="#333">FastAPI</text>
+  <text x="370" y="283" text-anchor="middle" font-size="12" fill="#666">(API 网关)</text>
+  
+  <!-- 审查引擎 -->
+  <rect x="510" y="240" width="280" height="60" rx="6" fill="#fff" stroke="#4caf50" stroke-width="2"/>
+  <text x="650" y="265" text-anchor="middle" font-size="14" font-weight="600" fill="#333">审查引擎</text>
+  <text x="650" y="283" text-anchor="middle" font-size="12" fill="#666">6 Agent + 编排 + 聚合</text>
+  
+  <!-- 连接线 -->
+  <line x1="230" y1="270" x2="280" y2="270" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="460" y1="270" x2="510" y2="270" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+  
+  <!-- SQLite -->
+  <rect x="350" y="360" width="200" height="60" rx="6" fill="#fff" stroke="#9c27b0" stroke-width="2"/>
+  <text x="450" y="385" text-anchor="middle" font-size="14" font-weight="600" fill="#333">SQLite</text>
+  <text x="450" y="403" text-anchor="middle" font-size="12" fill="#666">(持久化)</text>
+  
+  <line x1="370" y1="300" x2="370" y2="360" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+  
+  <!-- 箭头定义 -->
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#666"/>
+    </marker>
+  </defs>
+</svg>
+
+<!-- ============================================================ -->
+<!-- 4. 核心设计原则                                                 -->
+<!-- ============================================================ -->
+<h2 id="principles">4. 核心设计原则</h2>
+
+<table>
+<thead><tr><th>原则</th><th>含义</th><th>在代码中的体现</th></tr></thead>
+<tbody>
+<tr>
+<td><strong>确定性工具兜底 + LLM 语义补充</strong></td>
+<td>Semgrep/Ruff/pip-audit/AST 确保基础检测不漏（零漏报），LLM 补充语义理解和修复建议。LLM 失败时自动降级到纯工具结果。</td>
+<td>每个 Agent 的 <code>analyze()</code> 方法都先调用确定性工具，再 try/except 调用 LLM。参见 <code>app/agents/security_agent.py</code></td>
+</tr>
+<tr>
+<td><strong>6 Agent 并行编排</strong></td>
+<td>asyncio.gather 并行执行所有 Agent，结果去重聚合，最小化审查时间。单个 Agent 异常不阻塞整体。</td>
+<td><code>ReviewService.run_review()</code> 中的 <code>asyncio.gather(*[_run_one(...)])</code>。参见 <code>app/services/review_service.py</code></td>
+</tr>
+<tr>
+<td><strong>可验证维度分离</strong></td>
+<td>每个 Agent 聚焦一个可验证的代码质量维度（安全/规范/依赖/覆盖/性能/Git），职责单一，易于扩展。</td>
+<td>每个 Agent 继承 <code>BaseAgent</code>，实现独立的 <code>analyze()</code>。参见 <code>app/agents/base.py</code></td>
+</tr>
+<tr>
+<td><strong>优雅降级</strong></td>
+<td>LLM 不可用时系统仍能正常工作（纯工具模式）；单个 Agent 失败时其他 Agent 不受影响。</td>
+<td>所有 LLM 调用都包裹在 try/except 中，失败时 logger.warning 并返回空列表。</td>
+</tr>
+<tr>
+<td><strong>实时可观测</strong></td>
+<td>审查进度通过 WebSocket 实时推送，运行时指标（Review/LLM/Agent）全程跟踪，审计日志记录关键操作。</td>
+<td><code>ProgressEmitter</code> + <code>MetricsTracker</code>。参见 <code>app/services/progress.py</code> 和 <code>app/services/metrics.py</code></td>
+</tr>
+</tbody>
+</table>
+
+<!-- ============================================================ -->
+<!-- 5. 分层架构详解                                                 -->
+<!-- ============================================================ -->
+<h2 id="layered-arch">5. 分层架构详解</h2>
+
+<svg class="diagram-svg" viewBox="0 0 800 500" xmlns="http://www.w3.org/2000/svg">
+  <!-- 用户层 -->
+  <rect x="50" y="20" width="700" height="80" rx="8" fill="#e3f2fd" stroke="#2196f3" stroke-width="2"/>
+  <text x="400" y="45" text-anchor="middle" font-size="16" font-weight="bold" fill="#1976d2">用户层 (Presentation)</text>
+  <text x="400" y="68" text-anchor="middle" font-size="13" fill="#555">React 18 + TypeScript + Ant Design 5 + Zustand</text>
+  <text x="400" y="88" text-anchor="middle" font-size="12" fill="#666">职责：用户交互、路由管理、状态管理、WebSocket 实时展示</text>
+  
+  <!-- API 网关层 -->
+  <rect x="50" y="110" width="700" height="80" rx="8" fill="#f3e5f5" stroke="#9c27b0" stroke-width="2"/>
+  <text x="400" y="135" text-anchor="middle" font-size="16" font-weight="bold" fill="#7b1fa2">API 网关层 (API Gateway)</text>
+  <text x="400" y="158" text-anchor="middle" font-size="13" fill="#555">FastAPI + CORS + Pydantic 验证</text>
+  <text x="400" y="178" text-anchor="middle" font-size="12" fill="#666">职责：路由分发、请求验证、CORS 处理、生命周期管理</text>
+  
+  <!-- 业务逻辑层 -->
+  <rect x="50" y="200" width="700" height="80" rx="8" fill="#fff3e0" stroke="#ff9800" stroke-width="2"/>
+  <text x="400" y="225" text-anchor="middle" font-size="16" font-weight="bold" fill="#f57c00">业务逻辑层 (Business Logic)</text>
+  <text x="400" y="248" text-anchor="middle" font-size="13" fill="#555">ReviewService（审查编排）+ HealthService（评分）</text>
+  <text x="400" y="268" text-anchor="middle" font-size="12" fill="#666">职责：Agent 调度、结果聚合、评分计算、进度事件发布</text>
+  
+  <!-- AI Agent 层 -->
+  <rect x="50" y="290" width="700" height="100" rx="8" fill="#e8f5e9" stroke="#4caf50" stroke-width="2"/>
+  <text x="400" y="315" text-anchor="middle" font-size="16" font-weight="bold" fill="#2e7d32">AI Agent 层（6 个并行）</text>
+  <text x="400" y="338" text-anchor="middle" font-size="13" fill="#555">SecurityAgent | CodeStyleAgent | DependencyAgent</text>
+  <text x="400" y="358" text-anchor="middle" font-size="13" fill="#555">TestCoverageAgent | PerformanceAgent | GitReviewAgent</text>
+  <text x="400" y="378" text-anchor="middle" font-size="12" fill="#666">职责：各维度的代码分析，输出标准化 Finding</text>
+  
+  <!-- 基础设施层 -->
+  <rect x="50" y="400" width="700" height="80" rx="8" fill="#fce4ec" stroke="#e91e63" stroke-width="2"/>
+  <text x="400" y="425" text-anchor="middle" font-size="16" font-weight="bold" fill="#c2185b">基础设施层 (Infrastructure)</text>
+  <text x="400" y="448" text-anchor="middle" font-size="13" fill="#555">SQLAlchemy ORM | SQLite (aiosqlite) | structlog | httpx</text>
+  <text x="400" y="468" text-anchor="middle" font-size="12" fill="#666">职责：数据持久化、外部工具调用、LLM API 通信、日志</text>
+  
+  <!-- 连接箭头 -->
+  <line x1="400" y1="100" x2="400" y2="110" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="400" y1="190" x2="400" y2="200" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="400" y1="280" x2="400" y2="290" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="400" y1="390" x2="400" y2="400" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+  
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#666"/>
+    </marker>
+  </defs>
+</svg>
+
+<h3>层间依赖规则</h3>
+<ul>
+<li><strong>严格单向依赖</strong>：上层依赖下层，下层不依赖上层</li>
+<li><strong>Agent 层不依赖 API 层</strong>：Agent 只接收 <code>project_path</code> 和 <code>file_paths</code>，返回 <code>list[dict]</code>，不关心 HTTP 细节</li>
+<li><strong>业务层通过接口编排 Agent</strong>：ReviewService 通过 Agent 注册表动态选择 Agent，不硬编码具体 Agent 类</li>
+</ul>
+
+<!-- ============================================================ -->
+<!-- 6. 6 大 Agent 详解                                              -->
+<!-- ============================================================ -->
+<h2 id="agent-detail">6. 6 大 Agent 详解</h2>
+
+<p>所有 Agent 继承自 <code>BaseAgent</code>（<code>app/agents/base.py</code>），实现统一的 <code>analyze(project_path, file_paths) → list[dict]</code> 接口。</p>
+
+<h3>Agent 基类与 Finding 数据结构</h3>
+<pre class="code-block"><code># app/agents/base.py
+
+@dataclass
+class AgentFinding:
+    """Agent 发现的问题"""
+    rule_id: str = ""
+    severity: str = "warning"       # critical / warning / suggestion / nitpick
+    message: str = ""
+    file_path: str = ""
+    line_start: int | None = None
+    line_end: int | None = None
+    code_snippet: str = ""
+    suggestion: str = ""
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+class BaseAgent(ABC):
+    name: str = ""
+    description: str = ""
+
+    @abstractmethod
+    async def analyze(
+        self,
+        project_path: str,
+        file_paths: list[str] | None = None,
+    ) -&gt; list[dict[str, Any]]:
+        """分析代码，返回发现列表"""
+        ...</code></pre>
+
+<h3>Agent 注册表</h3>
+<p>ReviewService 通过注册表动态选择 Agent，支持 <code>full</code>（全部）或指定单个类型：</p>
+<pre class="code-block"><code># app/services/review_service.py
+
+AGENT_REGISTRY = {
+    "security":      (SecurityAgent,      "security",      "security"),
+    "code_style":    (CodeStyleAgent,     "code_style",    "code_style"),
+    "dependency":    (DependencyAgent,    "dependency",    "dependency"),
+    "test_coverage": (TestCoverageAgent,  "test_coverage", "test_coverage"),
+    "performance":   (PerformanceAgent,   "performance",   "performance"),
+    "git_review":    (GitReviewAgent,     "git_review",    "git_review"),
+}</code></pre>
+
+<!-- Agent 1: SecurityAgent -->
+<h3 id="agent-security">6.1 SecurityAgent — 安全审查</h3>
+<table class="agent-info">
+<tr><td><strong>代码路径</strong></td><td><code>app/agents/security_agent.py</code></td></tr>
+<tr><td><strong>确定性工具</strong></td><td>Semgrep（多规则集：python/flask/django/sqlalchemy/bandit/owasp-top-ten）</td></tr>
+<tr><td><strong>LLM 补充</strong></td><td>安全专家 Prompt，聚焦 SQL 注入、命令注入、XSS、硬编码密码、不安全反序列化</td></tr>
+</table>
+
+<h4>工作流程</h4>
 <ol>
-<li><strong>触发</strong>：用户通过 Web UI 选择项目和审查类型</li>
-<li><strong>调度</strong>：ReviewService 解析审查类型，确定需要运行的 Agent 列表</li>
-<li><strong>并行执行</strong>：asyncio.gather 并行启动所有 Agent</li>
-<li><strong>结果聚合</strong>：每个 Agent 的 findings 汇总、去重、按严重度排序</li>
-<li><strong>健康度计算</strong>：基于 findings 的负分制评分（0-100）</li>
-<li><strong>报告生成</strong>：Markdown + HTML 格式报告</li>
+<li><strong>语言检测</strong>：扫描项目文件特征（<code>*.py</code>、<code>pyproject.toml</code>、<code>package.json</code> 等），自动选择对应 Semgrep 规则集</li>
+<li><strong>Semgrep 扫描</strong>：对每个规则集执行 <code>semgrep scan --config {ruleset} --json</code>，解析 JSON 输出，映射严重度</li>
+<li><strong>LLM 分析</strong>：收集代码文件，通过 ContextEngine 增强 Prompt，并发调用 LLM</li>
+<li><strong>去重合并</strong>：按 <code>(rule_id, file_path, line_start)</code> 去重</li>
 </ol>
 
-<h2 id="techstack">5. 技术栈</h2>
-<table style="border-collapse: collapse; width: 100%;">
-<tr style="background: #f6f8fa;"><th style="padding: 8px; border: 1px solid #ddd;">组件</th><th style="padding: 8px; border: 1px solid #ddd;">技术</th><th style="padding: 8px; border: 1px solid #ddd;">版本</th></tr>
-<tr><td style="padding: 8px; border: 1px solid #ddd;">Web 框架</td><td style="padding: 8px; border: 1px solid #ddd;">FastAPI</td><td style="padding: 8px; border: 1px solid #ddd;">0.104+</td></tr>
-<tr><td style="padding: 8px; border: 1px solid #ddd;">ORM</td><td style="padding: 8px; border: 1px solid #ddd;">SQLAlchemy</td><td style="padding: 8px; border: 1px solid #ddd;">2.0+</td></tr>
-<tr><td style="padding: 8px; border: 1px solid #ddd;">数据库</td><td style="padding: 8px; border: 1px solid #ddd;">SQLite (aiosqlite)</td><td style="padding: 8px; border: 1px solid #ddd;">-</td></tr>
-<tr><td style="padding: 8px; border: 1px solid #ddd;">前端框架</td><td style="padding: 8px; border: 1px solid #ddd;">React + TypeScript</td><td style="padding: 8px; border: 1px solid #ddd;">18+</td></tr>
-<tr><td style="padding: 8px; border: 1px solid #ddd;">UI 库</td><td style="padding: 8px; border: 1px solid #ddd;">Ant Design</td><td style="padding: 8px; border: 1px solid #ddd;">5.0+</td></tr>
-<tr><td style="padding: 8px; border: 1px solid #ddd;">安全分析</td><td style="padding: 8px; border: 1px solid #ddd;">Semgrep</td><td style="padding: 8px; border: 1px solid #ddd;">1.50+</td></tr>
-<tr><td style="padding: 8px; border: 1px solid #ddd;">代码规范</td><td style="padding: 8px; border: 1px solid #ddd;">Ruff</td><td style="padding: 8px; border: 1px solid #ddd;">0.1+</td></tr>
-<tr><td style="padding: 8px; border: 1px solid #ddd;">依赖漏洞</td><td style="padding: 8px; border: 1px solid #ddd;">pip-audit</td><td style="padding: 8px; border: 1px solid #ddd;">-</td></tr>
+<h4>严重度映射</h4>
+<table>
+<thead><tr><th>Semgrep 原始</th><th>映射后</th></tr></thead>
+<tbody>
+<tr><td>ERROR</td><td>critical</td></tr>
+<tr><td>WARNING</td><td>warning</td></tr>
+<tr><td>INFO</td><td>suggestion</td></tr>
+</tbody>
 </table>
+
+<!-- Agent 2: CodeStyleAgent -->
+<h3 id="agent-codestyle">6.2 CodeStyleAgent — 代码规范审查</h3>
+<table class="agent-info">
+<tr><td><strong>代码路径</strong></td><td><code>app/agents/code_style_agent.py</code></td></tr>
+<tr><td><strong>确定性工具</strong></td><td>Ruff（pyflakes/pycodestyle/complexity/命名/import 排序/bugbear/bandit）</td></tr>
+<tr><td><strong>LLM 补充</strong></td><td>规范专家 Prompt，聚焦命名规范、函数复杂度、重复代码、类型注解、可读性</td></tr>
+</table>
+
+<h4>Ruff 规则 → 严重度映射</h4>
+<table>
+<thead><tr><th>规则代码</th><th>严重度</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td>F821</td><td>critical</td><td>未定义名称</td></tr>
+<tr><td>F811</td><td>warning</td><td>重定义</td></tr>
+<tr><td>F401 / F841</td><td>suggestion</td><td>未使用 import / 变量</td></tr>
+<tr><td>C</td><td>warning</td><td>复杂度</td></tr>
+<tr><td>B</td><td>warning</td><td>flake8-bugbear</td></tr>
+<tr><td>N</td><td>suggestion</td><td>命名规范</td></tr>
+<tr><td>I</td><td>nitpick</td><td>import 排序</td></tr>
+</tbody>
+</table>
+
+<!-- Agent 3: DependencyAgent -->
+<h3 id="agent-dependency">6.3 DependencyAgent — 依赖审查</h3>
+<table class="agent-info">
+<tr><td><strong>代码路径</strong></td><td><code>app/agents/dependency_agent.py</code></td></tr>
+<tr><td><strong>确定性工具</strong></td><td>pip-audit（Python 漏洞扫描）+ npm registry API（JS 过时检测）</td></tr>
+<tr><td><strong>LLM 补充</strong></td><td>依赖管理专家 Prompt，识别风险/弃用/过时/许可证问题</td></tr>
+</table>
+
+<h4>双生态扫描策略</h4>
+<ul>
+<li><strong>Python</strong>：读取 <code>requirements.txt</code> → 执行 <code>pip-audit -f json</code> → 按 CVE 评分映射严重度（≥9.0 critical, ≥7.0 warning, ≥4.0 suggestion）</li>
+<li><strong>JavaScript</strong>：读取 <code>package.json</code> → 并发查询 npm registry（Semaphore 限制并发 5）→ 比对声明版本与最新版本</li>
+</ul>
+
+<!-- Agent 4: TestCoverageAgent -->
+<h3 id="agent-coverage">6.4 TestCoverageAgent — 测试覆盖审查</h3>
+<table class="agent-info">
+<tr><td><strong>代码路径</strong></td><td><code>app/agents/test_coverage_agent.py</code></td></tr>
+<tr><td><strong>确定性工具</strong></td><td>Python AST 静态分析（解析函数定义 + 测试文件引用）</td></tr>
+<tr><td><strong>LLM 补充</strong></td><td>测试工程专家 Prompt，为未测试函数生成测试建议</td></tr>
+</table>
+
+<h4>AST 分析原理</h4>
+<ol>
+<li>遍历项目所有 <code>*.py</code> 文件，区分测试文件和源文件</li>
+<li>对测试文件：用 <code>ast.walk()</code> 提取所有 <code>ast.Name</code> 和 <code>ast.Attribute</code> 引用，构建"已测试函数集合"</li>
+<li>对源文件：用 <code>ast.walk()</code> 提取所有 <code>FunctionDef</code> / <code>AsyncFunctionDef</code>，跳过 <code>_</code> 开头和 <code>test_</code> 开头的函数</li>
+<li>若函数名不在"已测试集合"中 → 标记为未测试</li>
+<li>若项目完全没有测试目录 → 额外报 warning</li>
+</ol>
+
+<!-- Agent 5: PerformanceAgent -->
+<h3 id="agent-performance">6.5 PerformanceAgent — 性能分析审查</h3>
+<table class="agent-info">
+<tr><td><strong>代码路径</strong></td><td><code>app/agents/performance_agent.py</code></td></tr>
+<tr><td><strong>确定性工具</strong></td><td>Python AST 自定义 Visitor（4 种反模式检测）</td></tr>
+<tr><td><strong>LLM 补充</strong></td><td>性能优化专家 Prompt</td></tr>
+</table>
+
+<h4>AST 反模式检测</h4>
+<table>
+<thead><tr><th>反模式</th><th>规则 ID</th><th>检测方法</th><th>严重度</th></tr></thead>
+<tbody>
+<tr><td>N+1 查询</td><td>PERF-N+1</td><td>循环内 ORM 调用（query/filter/get/all 等）</td><td>critical</td></tr>
+<tr><td>同步阻塞</td><td>PERF-SYNC</td><td>async 函数内 time.sleep/requests.get/subprocess.run</td><td>critical</td></tr>
+<tr><td>字符串拼接</td><td>PERF-CONCAT</td><td>循环内 <code>+=</code> 字符串拼接（O(n²)）</td><td>warning</td></tr>
+<tr><td>无限制查询</td><td>PERF-UNBOUNDED</td><td>.all() 无 .limit() 配合</td><td>suggestion</td></tr>
+</tbody>
+</table>
+
+<h4>AST Visitor 实现亮点</h4>
+<p>N+1 检测使用自定义 <code>ast.NodeVisitor</code>，通过 <code>_loop_depth</code> 计数器追踪循环嵌套深度。只有 <code>_loop_depth &gt; 0</code> 时（即处于循环体内）才检查 ORM 调用，精准定位 N+1 反模式。</p>
+<p>同步阻塞检测使用 <code>ast.NodeVisitor</code>，通过 <code>_in_async</code> 标志追踪是否处于 async 函数体内，再用 <code>ast.walk()</code> 扫描所有 <code>ast.Call</code> 节点，比对预定义的阻塞调用集合。</p>
+
+<!-- Agent 6: GitReviewAgent -->
+<h3 id="agent-git">6.6 GitReviewAgent — Git 审查</h3>
+<table class="agent-info">
+<tr><td><strong>代码路径</strong></td><td><code>app/agents/git_review_agent.py</code></td></tr>
+<tr><td><strong>确定性工具</strong></td><td>Git CLI（提交规范检查 + 分支策略 + 贡献统计）</td></tr>
+<tr><td><strong>LLM 补充</strong></td><td>Git 工作流专家 Prompt</td></tr>
+</table>
+
+<h4>4 个检测维度</h4>
+<ol>
+<li><strong>提交规范</strong>：检查最近 50 条提交是否遵循 Conventional Commits（<code>feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert</code>），统计违规比例</li>
+<li><strong>分支策略</strong>：检查分支命名是否符合 <code>type/description</code> 格式（feature/fix/hotfix/release/chore/docs），找出超 30 天未更新的陈旧分支</li>
+<li><strong>贡献统计</strong>：分析近 30 天提交频率（检测"突击提交"模式），统计近 90 天文件热点（高频修改文件可能存在设计问题）</li>
+<li><strong>LLM 点评</strong>：收集仓库信息 + 提交历史 + 分支列表，LLM 综合分析</li>
+</ol>
+
+<!-- ============================================================ -->
+<!-- 7. 数据模型与存储                                               -->
+<!-- ============================================================ -->
+<h2 id="data-model">7. 数据模型与存储</h2>
+
+<p>使用 SQLAlchemy 2.0 + Mapped 类型注解，SQLite (aiosqlite) 异步驱动。所有模型定义在 <code>backend/app/models/</code> 目录。</p>
+
+<h3>ER 关系图</h3>
+<svg class="diagram-svg" viewBox="0 0 1000 500" xmlns="http://www.w3.org/2000/svg">
+  <!-- Project 表 -->
+  <rect x="20" y="20" width="200" height="320" rx="6" fill="#e3f2fd" stroke="#2196f3" stroke-width="2"/>
+  <rect x="20" y="20" width="200" height="40" rx="6" fill="#2196f3"/>
+  <text x="120" y="45" text-anchor="middle" font-size="16" font-weight="bold" fill="#fff">Project</text>
+  <text x="30" y="80" font-size="12" fill="#333">id (PK)</text>
+  <text x="30" y="100" font-size="12" fill="#333">name</text>
+  <text x="30" y="120" font-size="12" fill="#333">path (unique)</text>
+  <text x="30" y="140" font-size="12" fill="#333">description</text>
+  <text x="30" y="160" font-size="12" fill="#333">language</text>
+  <text x="30" y="180" font-size="12" fill="#333">framework</text>
+  <text x="30" y="200" font-size="12" fill="#333">git_remote</text>
+  <text x="30" y="220" font-size="12" fill="#333">health_score</text>
+  <text x="30" y="240" font-size="12" fill="#333">is_active</text>
+  <text x="30" y="260" font-size="12" fill="#333">created_at</text>
+  <text x="30" y="280" font-size="12" fill="#333">updated_at</text>
+  
+  <!-- Review 表 -->
+  <rect x="320" y="20" width="240" height="400" rx="6" fill="#fff3e0" stroke="#ff9800" stroke-width="2"/>
+  <rect x="320" y="20" width="240" height="40" rx="6" fill="#ff9800"/>
+  <text x="440" y="45" text-anchor="middle" font-size="16" font-weight="bold" fill="#fff">Review</text>
+  <text x="330" y="80" font-size="12" fill="#333">id (PK)</text>
+  <text x="330" y="100" font-size="12" fill="#333">project_id (FK)</text>
+  <text x="330" y="120" font-size="12" fill="#333">trigger_type</text>
+  <text x="330" y="140" font-size="12" fill="#333">status</text>
+  <text x="330" y="160" font-size="12" fill="#333">review_type</text>
+  <text x="330" y="180" font-size="12" fill="#333">started_at</text>
+  <text x="330" y="200" font-size="12" fill="#333">completed_at</text>
+  <text x="330" y="220" font-size="12" fill="#333">duration_seconds</text>
+  <text x="330" y="240" font-size="12" fill="#333">health_score_snapshot</text>
+  <text x="330" y="260" font-size="12" fill="#333">total_findings</text>
+  <text x="330" y="280" font-size="12" fill="#333">critical_count</text>
+  <text x="330" y="300" font-size="12" fill="#333">warning_count</text>
+  <text x="330" y="320" font-size="12" fill="#333">suggestion_count</text>
+  <text x="330" y="340" font-size="12" fill="#333">nitpick_count</text>
+  <text x="330" y="360" font-size="12" fill="#333">summary</text>
+  <text x="330" y="380" font-size="12" fill="#333">created_at</text>
+  
+  <!-- Finding 表 -->
+  <rect x="660" y="20" width="240" height="340" rx="6" fill="#e8f5e9" stroke="#4caf50" stroke-width="2"/>
+  <rect x="660" y="20" width="240" height="40" rx="6" fill="#4caf50"/>
+  <text x="780" y="45" text-anchor="middle" font-size="16" font-weight="bold" fill="#fff">Finding</text>
+  <text x="670" y="80" font-size="12" fill="#333">id (PK)</text>
+  <text x="670" y="100" font-size="12" fill="#333">review_id (FK)</text>
+  <text x="670" y="120" font-size="12" fill="#333">agent_name</text>
+  <text x="670" y="140" font-size="12" fill="#333">category</text>
+  <text x="670" y="160" font-size="12" fill="#333">severity</text>
+  <text x="670" y="180" font-size="12" fill="#333">status</text>
+  <text x="670" y="200" font-size="12" fill="#333">file_path</text>
+  <text x="670" y="220" font-size="12" fill="#333">line_number</text>
+  <text x="670" y="240" font-size="12" fill="#333">code_snippet</text>
+  <text x="670" y="260" font-size="12" fill="#333">message</text>
+  <text x="670" y="280" font-size="12" fill="#333">description</text>
+  <text x="670" y="300" font-size="12" fill="#333">suggestion</text>
+  <text x="670" y="320" font-size="12" fill="#333">is_auto_fixable</text>
+  <text x="670" y="340" font-size="12" fill="#333">created_at</text>
+  
+  <!-- LLMConfig 表 -->
+  <rect x="20" y="380" width="180" height="200" rx="6" fill="#f3e5f5" stroke="#9c27b0" stroke-width="2"/>
+  <rect x="20" y="380" width="180" height="40" rx="6" fill="#9c27b0"/>
+  <text x="110" y="405" text-anchor="middle" font-size="16" font-weight="bold" fill="#fff">LLMConfig</text>
+  <text x="30" y="440" font-size="12" fill="#333">id (PK)</text>
+  <text x="30" y="460" font-size="12" fill="#333">name</text>
+  <text x="30" y="480" font-size="12" fill="#333">base_url</text>
+  <text x="30" y="500" font-size="12" fill="#333">model</text>
+  <text x="30" y="520" font-size="12" fill="#333">api_key</text>
+  <text x="30" y="540" font-size="12" fill="#333">max_tokens</text>
+  <text x="30" y="560" font-size="12" fill="#333">temperature</text>
+  
+  <!-- LLMUsage 表 -->
+  <rect x="240" y="440" width="200" height="180" rx="6" fill="#fce4ec" stroke="#e91e63" stroke-width="2"/>
+  <rect x="240" y="440" width="200" height="40" rx="6" fill="#e91e63"/>
+  <text x="340" y="465" text-anchor="middle" font-size="16" font-weight="bold" fill="#fff">LLMUsage</text>
+  <text x="250" y="500" font-size="12" fill="#333">id (PK)</text>
+  <text x="250" y="520" font-size="12" fill="#333">model</text>
+  <text x="250" y="540" font-size="12" fill="#333">config_name</text>
+  <text x="250" y="560" font-size="12" fill="#333">prompt_tokens</text>
+  <text x="250" y="580" font-size="12" fill="#333">completion_tokens</text>
+  <text x="250" y="600" font-size="12" fill="#333">total_tokens</text>
+  
+  <!-- 关系线 -->
+  <line x1="220" y1="100" x2="320" y2="100" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="270" y="95" text-anchor="middle" font-size="12" font-weight="bold" fill="#666">1:N</text>
+  
+  <line x1="560" y1="100" x2="660" y2="100" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="610" y="95" text-anchor="middle" font-size="12" font-weight="bold" fill="#666">1:N</text>
+  
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#666"/>
+    </marker>
+  </defs>
+</svg>
+
+<h3>核心模型详解</h3>
+
+<h4>Project（项目）</h4>
+<table>
+<thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td>id</td><td>String(36) PK</td><td>UUID 主键</td></tr>
+<tr><td>name</td><td>String(255)</td><td>项目名称，有索引</td></tr>
+<tr><td>path</td><td>String(1024) UNIQUE</td><td>项目本地路径（唯一约束）</td></tr>
+<tr><td>language / framework</td><td>String(50)</td><td>主要语言和框架</td></tr>
+<tr><td>health_score</td><td>Float</td><td>最近一次审查的健康度评分</td></tr>
+</tbody>
+</table>
+
+<h4>Review（审查记录）</h4>
+<table>
+<thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td>trigger_type</td><td>String(50)</td><td>触发方式：manual / cli / web_trigger</td></tr>
+<tr><td>status</td><td>String(50)</td><td>状态机：pending → running → completed / failed</td></tr>
+<tr><td>review_type</td><td>String(100)</td><td>审查类型：full / security / code_style / dependency / test_coverage / performance / git_review</td></tr>
+<tr><td>health_score_snapshot</td><td>Float</td><td>本次审查的健康度评分快照</td></tr>
+<tr><td>*_count</td><td>Integer</td><td>各严重度 Finding 计数（critical/warning/suggestion/nitpick）</td></tr>
+</tbody>
+</table>
+
+<h4>Finding（审查发现）</h4>
+<table>
+<thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td>agent_name</td><td>String(100)</td><td>产生此 Finding 的 Agent 名称</td></tr>
+<tr><td>category</td><td>String(100)</td><td>分类：security / code_style / dependency / test_coverage / performance / git_review</td></tr>
+<tr><td>severity</td><td>String(50)</td><td>严重度：critical / warning / suggestion / nitpick</td></tr>
+<tr><td>status</td><td>String(20)</td><td>处理状态：open / acknowledged / fixed</td></tr>
+<tr><td>is_auto_fixable</td><td>Boolean</td><td>是否可自动修复（如 Ruff 可自动修复的规则）</td></tr>
+</tbody>
+</table>
+
+<!-- ============================================================ -->
+<!-- 8. API 设计                                                     -->
+<!-- ============================================================ -->
+<h2 id="api-design">8. API 设计</h2>
+
+<p>所有 API 以 <code>/api/v1</code> 为前缀，路由注册在 <code>app/api/v1/router.py</code>。FastAPI 自动生成 OpenAPI 文档（<code>/docs</code>）。</p>
+
+<h3>核心端点</h3>
+<table>
+<thead><tr><th>方法</th><th>路径</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td>GET</td><td>/api/v1/projects</td><td>项目列表</td></tr>
+<tr><td>POST</td><td>/api/v1/projects</td><td>创建项目</td></tr>
+<tr><td>GET</td><td>/api/v1/projects/{id}</td><td>项目详情</td></tr>
+<tr><td>GET</td><td>/api/v1/reviews</td><td>审查记录列表</td></tr>
+<tr><td>POST</td><td>/api/v1/reviews</td><td>触发审查（同步）</td></tr>
+<tr><td>POST</td><td>/api/v1/reviews/run-async</td><td>触发审查（异步，立即返回 review_id）</td></tr>
+<tr><td>GET</td><td>/api/v1/reviews/{id}</td><td>审查详情（含 Findings）</td></tr>
+<tr><td>GET</td><td>/api/v1/reviews/{id}/findings</td><td>审查发现列表</td></tr>
+<tr><td>GET</td><td>/api/v1/system/metrics</td><td>运行时指标快照</td></tr>
+<tr><td>GET</td><td>/api/v1/system/health</td><td>健康检查</td></tr>
+<tr><td>GET</td><td>/api/v1/docs</td><td>文档元数据列表</td></tr>
+<tr><td>GET</td><td>/api/v1/docs/{category}/{id}</td><td>文档 HTML 内容</td></tr>
+<tr><td>WS</td><td>/api/v1/ws/reviews/{id}</td><td>审查进度 WebSocket</td></tr>
+</tbody>
+</table>
+
+<!-- ============================================================ -->
+<!-- 9. 实时通信架构                                                 -->
+<!-- ============================================================ -->
+<h2 id="realtime">9. 实时通信架构</h2>
+
+<p>系统使用<strong>内存级发布/订阅事件总线</strong>（<code>ProgressEmitter</code>）+ <strong>WebSocket</strong> 实现审查进度的实时推送。</p>
+
+<h3>事件流时序</h3>
+<svg class="diagram-svg" viewBox="0 0 900 520" xmlns="http://www.w3.org/2000/svg">
+  <!-- 用户 -->
+  <rect x="30" y="20" width="120" height="50" rx="6" fill="#e3f2fd" stroke="#2196f3" stroke-width="2"/>
+  <text x="90" y="50" text-anchor="middle" font-size="14" font-weight="600" fill="#333">用户</text>
+  
+  <!-- 前端 -->
+  <rect x="200" y="20" width="140" height="50" rx="6" fill="#e8f5e9" stroke="#4caf50" stroke-width="2"/>
+  <text x="270" y="45" text-anchor="middle" font-size="13" font-weight="600" fill="#333">React 前端</text>
+  <text x="270" y="62" text-anchor="middle" font-size="11" fill="#666">WebSocket 客户端</text>
+  
+  <!-- API -->
+  <rect x="400" y="20" width="140" height="50" rx="6" fill="#fff3e0" stroke="#ff9800" stroke-width="2"/>
+  <text x="470" y="45" text-anchor="middle" font-size="13" font-weight="600" fill="#333">FastAPI</text>
+  <text x="470" y="62" text-anchor="middle" font-size="11" fill="#666">API 网关</text>
+  
+  <!-- ReviewService -->
+  <rect x="600" y="20" width="160" height="50" rx="6" fill="#f3e5f5" stroke="#9c27b0" stroke-width="2"/>
+  <text x="680" y="45" text-anchor="middle" font-size="13" font-weight="600" fill="#333">ReviewService</text>
+  <text x="680" y="62" text-anchor="middle" font-size="11" fill="#666">审查编排</text>
+  
+  <!-- ProgressEmitter -->
+  <rect x="800" y="20" width="80" height="50" rx="6" fill="#fce4ec" stroke="#e91e63" stroke-width="2"/>
+  <text x="840" y="45" text-anchor="middle" font-size="12" font-weight="600" fill="#333">EventBus</text>
+  <text x="840" y="62" text-anchor="middle" font-size="11" fill="#666">事件总线</text>
+  
+  <!-- 时间线 -->
+  <line x1="90" y1="90" x2="90" y2="500" stroke="#ccc" stroke-width="1" stroke-dasharray="4"/>
+  <line x1="270" y1="90" x2="270" y2="500" stroke="#ccc" stroke-width="1" stroke-dasharray="4"/>
+  <line x1="470" y1="90" x2="470" y2="500" stroke="#ccc" stroke-width="1" stroke-dasharray="4"/>
+  <line x1="680" y1="90" x2="680" y2="500" stroke="#ccc" stroke-width="1" stroke-dasharray="4"/>
+  <line x1="840" y1="90" x2="840" y2="500" stroke="#ccc" stroke-width="1" stroke-dasharray="4"/>
+  
+  <!-- 1. 点击开始审查 -->
+  <line x1="90" y1="110" x2="270" y2="110" stroke="#2196f3" stroke-width="2" marker-end="url(#arrow-blue)"/>
+  <text x="180" y="105" text-anchor="middle" font-size="11" fill="#333">点击"开始审查"</text>
+  
+  <!-- 2. POST 请求 -->
+  <line x1="270" y1="140" x2="470" y2="140" stroke="#4caf50" stroke-width="2" marker-end="url(#arrow-green)"/>
+  <text x="370" y="135" text-anchor="middle" font-size="11" fill="#333">POST /reviews/run-async</text>
+  
+  <!-- 3. 返回 review_id -->
+  <line x1="470" y1="170" x2="270" y2="170" stroke="#ff9800" stroke-width="2" marker-end="url(#arrow-orange)" stroke-dasharray="4"/>
+  <text x="370" y="165" text-anchor="middle" font-size="11" fill="#333">返回 review_id</text>
+  
+  <!-- 4. WebSocket 连接 -->
+  <line x1="270" y1="200" x2="470" y2="200" stroke="#4caf50" stroke-width="2" marker-end="url(#arrow-green)"/>
+  <text x="370" y="195" text-anchor="middle" font-size="11" fill="#333">WS 连接 /ws/reviews/{id}</text>
+  
+  <!-- 5. 启动审查 -->
+  <line x1="470" y1="230" x2="680" y2="230" stroke="#ff9800" stroke-width="2" marker-end="url(#arrow-orange)"/>
+  <text x="575" y="225" text-anchor="middle" font-size="11" fill="#333">asyncio.Task 启动</text>
+  
+  <!-- 6. emit review_started -->
+  <line x1="680" y1="260" x2="840" y2="260" stroke="#9c27b0" stroke-width="2" marker-end="url(#arrow-purple)"/>
+  <text x="760" y="255" text-anchor="middle" font-size="11" fill="#333">emit("review_started")</text>
+  
+  <!-- 7. 回放历史事件 -->
+  <line x1="840" y1="290" x2="270" y2="290" stroke="#e91e63" stroke-width="2" marker-end="url(#arrow-pink)" stroke-dasharray="4"/>
+  <text x="555" y="285" text-anchor="middle" font-size="11" fill="#333">回放历史事件</text>
+  
+  <!-- 8. Agent 并行启动 -->
+  <rect x="620" y="310" width="120" height="60" rx="4" fill="#e8f5e9" stroke="#4caf50" stroke-width="1"/>
+  <text x="680" y="330" text-anchor="middle" font-size="11" font-weight="600" fill="#333">6 Agent 并行</text>
+  <text x="680" y="345" text-anchor="middle" font-size="10" fill="#666">emit("agent_started")</text>
+  <text x="680" y="360" text-anchor="middle" font-size="10" fill="#666">× 6</text>
+  <line x1="680" y1="310" x2="680" y2="300" stroke="#4caf50" stroke-width="1"/>
+  
+  <!-- 9. Agent 完成 -->
+  <rect x="620" y="390" width="120" height="60" rx="4" fill="#fff3e0" stroke="#ff9800" stroke-width="1"/>
+  <text x="680" y="410" text-anchor="middle" font-size="11" font-weight="600" fill="#333">Agent 完成</text>
+  <text x="680" y="425" text-anchor="middle" font-size="10" fill="#666">emit("agent_completed")</text>
+  <text x="680" y="440" text-anchor="middle" font-size="10" fill="#666">+ findings</text>
+  
+  <!-- 10. 实时推送 -->
+  <line x1="840" y1="420" x2="270" y2="420" stroke="#e91e63" stroke-width="2" marker-end="url(#arrow-pink)" stroke-dasharray="4"/>
+  <text x="555" y="415" text-anchor="middle" font-size="11" fill="#333">实时推送进度事件</text>
+  
+  <!-- 11. 审查完成 -->
+  <line x1="680" y1="470" x2="840" y2="470" stroke="#9c27b0" stroke-width="2" marker-end="url(#arrow-purple)"/>
+  <text x="760" y="465" text-anchor="middle" font-size="11" fill="#333">emit("review_completed")</text>
+  
+  <line x1="840" y1="490" x2="270" y2="490" stroke="#e91e63" stroke-width="2" marker-end="url(#arrow-pink)" stroke-dasharray="4"/>
+  <text x="555" y="485" text-anchor="middle" font-size="11" fill="#333">最终结果 + 自动断开</text>
+  
+  <defs>
+    <marker id="arrow-blue" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#2196f3"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#4caf50"/>
+    </marker>
+    <marker id="arrow-orange" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#ff9800"/>
+    </marker>
+    <marker id="arrow-purple" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#9c27b0"/>
+    </marker>
+    <marker id="arrow-pink" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#e91e63"/>
+    </marker>
+  </defs>
+</svg>
+
+<h3>关键设计</h3>
+<ul>
+<li><strong>历史回放</strong>：新订阅者连接时，先回放该 review_id 的所有历史事件，避免漏掉早期进度</li>
+<li><strong>自动清理</strong>：审查结束且所有订阅者断开后，自动清理历史事件</li>
+<li><strong>单进程内存实现</strong>：使用 <code>asyncio.Queue</code> 作为订阅通道，足够本项目规模；多进程需替换为 Redis pub/sub</li>
+</ul>
+
+<!-- ============================================================ -->
+<!-- 10. 健康度评分模型                                              -->
+<!-- ============================================================ -->
+<h2 id="health-score">10. 健康度评分模型</h2>
+
+<p>评分模型定义在 <code>app/services/health.py</code>，采用<strong>负分制</strong>：从 100 分起扣，下限 0，上限 100。</p>
+
+<h3>扣分权重</h3>
+<table>
+<thead><tr><th>严重度</th><th>扣分/个</th><th>含义</th></tr></thead>
+<tbody>
+<tr><td>critical</td><td>-15</td><td>严重问题（安全漏洞、N+1 查询等）</td></tr>
+<tr><td>warning</td><td>-5</td><td>需要关注的问题（代码规范违反、依赖漏洞等）</td></tr>
+<tr><td>suggestion</td><td>-2</td><td>改进建议（性能优化、测试补充等）</td></tr>
+<tr><td>nitpick</td><td>-0.5</td><td>细节优化（import 排序、分支命名等）</td></tr>
+</tbody>
+</table>
+
+<h3>颜色等级</h3>
+<table>
+<thead><tr><th>分数区间</th><th>颜色</th><th>含义</th></tr></thead>
+<tbody>
+<tr><td>80-100</td><td>green</td><td>健康</td></tr>
+<tr><td>60-79</td><td>orange</td><td>一般</td></tr>
+<tr><td>40-59</td><td>gold</td><td>较差</td></tr>
+<tr><td>0-39</td><td>red</td><td>严重</td></tr>
+</tbody>
+</table>
+
+<pre class="code-block"><code># app/services/health.py
+
+SEVERITY_PENALTY = {
+    "critical":   15.0,
+    "warning":     5.0,
+    "suggestion":  2.0,
+    "nitpick":     0.5,
+}
+
+def compute_health_score(review: Review, findings: list[Finding]) -&gt; float:
+    score = 100.0
+    for f in findings:
+        score -= SEVERITY_PENALTY.get(f.severity, 1.0)
+    return max(0.0, min(100.0, round(score, 1)))</code></pre>
+
+<!-- ============================================================ -->
+<!-- 11. LLM 集成架构                                               -->
+<!-- ============================================================ -->
+<h2 id="llm-integration">11. LLM 集成架构</h2>
+
+<p>LLM 调用通过共享客户端 <code>app/agents/llm_client.py</code> 统一管理，所有 Agent 复用同一套调用逻辑。</p>
+
+<h3>调用流程</h3>
+<svg class="diagram-svg" viewBox="0 0 900 580" xmlns="http://www.w3.org/2000/svg">
+  <!-- Agent.analyze() 起点 -->
+  <rect x="350" y="20" width="200" height="50" rx="25" fill="#e3f2fd" stroke="#2196f3" stroke-width="2"/>
+  <text x="450" y="50" text-anchor="middle" font-size="14" font-weight="600" fill="#333">Agent.analyze()</text>
+  
+  <!-- 步骤 1: 获取 LLM 配置 -->
+  <rect x="50" y="110" width="220" height="70" rx="6" fill="#fff3e0" stroke="#ff9800" stroke-width="2"/>
+  <text x="160" y="135" text-anchor="middle" font-size="13" font-weight="600" fill="#333">1. get_active_llm_config()</text>
+  <text x="160" y="155" text-anchor="middle" font-size="11" fill="#666">从数据库查询启用的</text>
+  <text x="160" y="170" text-anchor="middle" font-size="11" fill="#666">LLM 配置（优先默认配置）</text>
+  
+  <!-- 步骤 2: 收集代码文件 -->
+  <rect x="340" y="110" width="220" height="70" rx="6" fill="#e8f5e9" stroke="#4caf50" stroke-width="2"/>
+  <text x="450" y="135" text-anchor="middle" font-size="13" font-weight="600" fill="#333">2. collect_code_files()</text>
+  <text x="450" y="155" text-anchor="middle" font-size="11" fill="#666">收集待分析的代码文件</text>
+  <text x="450" y="170" text-anchor="middle" font-size="11" fill="#666">（限制文件数和大小）</text>
+  
+  <!-- 步骤 3: 构建上下文 -->
+  <rect x="630" y="110" width="220" height="70" rx="6" fill="#f3e5f5" stroke="#9c27b0" stroke-width="2"/>
+  <text x="740" y="135" text-anchor="middle" font-size="13" font-weight="600" fill="#333">3. enhance_prompt()</text>
+  <text x="740" y="155" text-anchor="middle" font-size="11" fill="#666">构建代码库索引</text>
+  <text x="740" y="170" text-anchor="middle" font-size="11" fill="#666">为 Prompt 注入上下文</text>
+  
+  <!-- 连接线 1-3 -->
+  <line x1="450" y1="70" x2="160" y2="110" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="450" y1="70" x2="450" y2="110" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="450" y1="70" x2="740" y2="110" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+  
+  <!-- 步骤 4: 运行 LLM 分析（大框） -->
+  <rect x="200" y="220" width="500" height="280" rx="8" fill="#fce4ec" stroke="#e91e63" stroke-width="2"/>
+  <text x="450" y="245" text-anchor="middle" font-size="14" font-weight="600" fill="#c2185b">4. run_llm_analysis(config, prompts, concurrency=3)</text>
+  
+  <!-- 子步骤 4.1 -->
+  <rect x="230" y="270" width="180" height="50" rx="4" fill="#fff" stroke="#e91e63" stroke-width="1"/>
+  <text x="320" y="290" text-anchor="middle" font-size="12" font-weight="600" fill="#333">Semaphore(3)</text>
+  <text x="320" y="308" text-anchor="middle" font-size="11" fill="#666">控制并发数</text>
+  
+  <!-- 子步骤 4.2 -->
+  <rect x="440" y="270" width="230" height="50" rx="4" fill="#fff" stroke="#e91e63" stroke-width="1"/>
+  <text x="555" y="290" text-anchor="middle" font-size="12" font-weight="600" fill="#333">llm_complete()</text>
+  <text x="555" y="308" text-anchor="middle" font-size="11" fill="#666">对每个文件调用 LLM</text>
+  
+  <!-- 子步骤 4.3 -->
+  <rect x="230" y="340" width="200" height="50" rx="4" fill="#fff" stroke="#e91e63" stroke-width="1"/>
+  <text x="330" y="360" text-anchor="middle" font-size="12" font-weight="600" fill="#333">POST /chat/completions</text>
+  <text x="330" y="378" text-anchor="middle" font-size="11" fill="#666">调用 LLM API</text>
+  
+  <!-- 子步骤 4.4 -->
+  <rect x="460" y="340" width="210" height="50" rx="4" fill="#fff" stroke="#e91e63" stroke-width="1"/>
+  <text x="565" y="360" text-anchor="middle" font-size="12" font-weight="600" fill="#333">记录 token 用量</text>
+  <text x="565" y="378" text-anchor="middle" font-size="11" fill="#666">写入 LLMUsage 表</text>
+  
+  <!-- 子步骤 4.5 -->
+  <rect x="230" y="410" width="200" height="50" rx="4" fill="#fff" stroke="#e91e63" stroke-width="1"/>
+  <text x="330" y="430" text-anchor="middle" font-size="12" font-weight="600" fill="#333">parse_json_object()</text>
+  <text x="330" y="448" text-anchor="middle" font-size="11" fill="#666">提取 JSON 响应</text>
+  
+  <!-- 子步骤 4.6 -->
+  <rect x="460" y="410" width="210" height="50" rx="4" fill="#fff" stroke="#e91e63" stroke-width="1"/>
+  <text x="565" y="430" text-anchor="middle" font-size="12" font-weight="600" fill="#333">标准化为 Finding</text>
+  <text x="565" y="448" text-anchor="middle" font-size="11" fill="#666">dict 列表</text>
+  
+  <!-- 步骤 5: 合并去重 -->
+  <rect x="300" y="530" width="300" height="50" rx="6" fill="#e8f5e9" stroke="#4caf50" stroke-width="2"/>
+  <text x="450" y="555" text-anchor="middle" font-size="13" font-weight="600" fill="#333">5. 与确定性工具结果合并去重</text>
+  
+  <!-- 连接线 -->
+  <line x1="160" y1="180" x2="350" y2="220" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="450" y1="180" x2="450" y2="220" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="740" y1="180" x2="550" y2="220" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="450" y1="500" x2="450" y2="530" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+  
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#666"/>
+    </marker>
+  </defs>
+</svg>
+
+<h3>关键设计决策</h3>
+<ul>
+<li><strong>OpenAI 兼容接口</strong>：使用标准 <code>/chat/completions</code> 端点，支持任意 OpenAI 兼容的 LLM 服务</li>
+<li><strong>并发控制</strong>：Semaphore(3) 限制同时 LLM 调用数，避免 API 限流</li>
+<li><strong>JSON 容错解析</strong>：<code>parse_json_object()</code> 从 LLM 回复中提取 <code>{...}</code> 区间，容忍 markdown 代码围栏等噪音</li>
+<li><strong>Token 用量持久化</strong>：每次调用都记录到 <code>LLMUsage</code> 表（prompt_tokens / completion_tokens / latency_ms），重启不丢失</li>
+<li><strong>优雅降级</strong>：LLM 不可用时，Agent 回退到纯工具结果，不阻塞审查流程</li>
+</ul>
+
+<!-- ============================================================ -->
+<!-- 12. 上下文引擎                                                  -->
+<!-- ============================================================ -->
+<h2 id="context-engine">12. 上下文引擎</h2>
+
+<p><code>AgentContextEnhancer</code>（<code>app/agents/context_enhancer.py</code>）在 LLM 分析前，通过 <code>ContextEngine</code> 构建代码库索引，为每个被审查文件补充项目级上下文。</p>
+
+<h3>工作原理</h3>
+<ol>
+<li><strong>构建索引</strong>：<code>ContextEngine.build(project_path)</code> 扫描项目文件，提取符号定义、导入关系、调用链</li>
+<li><strong>上下文增强</strong>：<code>enhance_prompt(file_path, base_prompt)</code> 为指定文件查找相关文件、符号引用、调用者信息</li>
+<li><strong>注入 Prompt</strong>：在基础 Prompt 前注入上下文信息，让 LLM 理解文件在项目中的位置</li>
+</ol>
+
+<pre class="code-block"><code># 注入后的 Prompt 结构：
+#
+# 以下是代码库上下文（帮助理解被审查文件在整个项目中的位置）：
+#
+# [相关文件、符号引用、调用者信息等]
+#
+# ---
+#
+# [原始 Agent Prompt]
+# 你是一个代码安全专家。请分析以下代码...</code></pre>
+
+<p><strong>降级策略</strong>：若 ContextEngine 构建失败（如项目过大、解析错误），自动降级为无上下文模式，直接使用原始 Prompt。</p>
+
+<!-- ============================================================ -->
+<!-- 13. 指标收集与审计日志                                           -->
+<!-- ============================================================ -->
+<h2 id="metrics-audit">13. 指标收集与审计日志</h2>
+
+<p><code>MetricsTracker</code>（<code>app/services/metrics.py</code>）是全局单例，收集运行时指标，通过 <code>/api/v1/system/metrics</code> 端点暴露快照。</p>
+
+<h3>指标维度</h3>
+<table>
+<thead><tr><th>维度</th><th>指标项</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td rowspan="3">Review</td><td>total / by_type / by_status</td><td>审查总数、按类型/状态统计</td></tr>
+<tr><td>avg_duration_s</td><td>按类型的平均审查耗时</td></tr>
+<tr><td>audit_log</td><td>最近 100 条审计日志</td></tr>
+<tr><td rowspan="4">LLM</td><td>calls_total / success / failed</td><td>LLM 调用次数和成功率</td></tr>
+<tr><td>total_tokens / tokens_by_model</td><td>Token 消耗总量和按模型统计</td></tr>
+<tr><td>avg_latency_s / p95_latency_s</td><td>平均和 P95 延迟</td></tr>
+<tr><td>success_rate</td><td>LLM 调用成功率</td></tr>
+<tr><td rowspan="4">Agent</td><td>runs / successes / failures</td><td>各 Agent 执行次数和成功率</td></tr>
+<tr><td>avg_duration_s / p95_duration_s</td><td>各 Agent 平均和 P95 耗时</td></tr>
+<tr><td>total_findings</td><td>各 Agent 发现的 Finding 总数</td></tr>
+<tr><td>success_rate</td><td>各 Agent 成功率</td></tr>
+</tbody>
+</table>
+
+<h3>审计日志</h3>
+<p>关键操作（如审查完成）自动记录审计日志，包含时间戳、操作类型和详细数据。内存中保留最近 100 条。</p>
+
+<!-- ============================================================ -->
+<!-- 14. 技术选型与决策                                              -->
+<!-- ============================================================ -->
+<h2 id="tech-decisions">14. 技术选型与决策</h2>
+
+<h3>后端框架：FastAPI vs Django vs Flask</h3>
+<table>
+<thead><tr><th>维度</th><th>FastAPI ✅</th><th>Django</th><th>Flask</th></tr></thead>
+<tbody>
+<tr><td>异步支持</td><td>原生 async/await</td><td>有限（ASGI 适配）</td><td>需扩展</td></tr>
+<tr><td>自动文档</td><td>内置 OpenAPI/Swagger</td><td>需第三方</td><td>需第三方</td></tr>
+<tr><td>数据验证</td><td>Pydantic 内置</td><td>Serializer</td><td>需扩展</td></tr>
+<tr><td>WebSocket</td><td>原生支持</td><td>需 Channels</td><td>需扩展</td></tr>
+<tr><td>性能</td><td>高（Starlette）</td><td>中</td><td>中</td></tr>
+</tbody>
+</table>
+<p><strong>选择理由</strong>：本项目核心是异步并行 Agent 编排 + WebSocket 实时推送，FastAPI 的原生 async 和 WebSocket 支持是决定性优势。</p>
+
+<h3>ORM：SQLAlchemy 2.0 vs Tortoise ORM</h3>
+<table>
+<thead><tr><th>维度</th><th>SQLAlchemy 2.0 ✅</th><th>Tortoise ORM</th></tr></thead>
+<tbody>
+<tr><td>类型注解</td><td>Mapped 类型注解，IDE 友好</td><td>类似 Django Model</td></tr>
+<tr><td>异步支持</td><td>AsyncSession 原生支持</td><td>原生异步</td></tr>
+<tr><td>生态成熟度</td><td>Python ORM 事实标准</td><td>较新</td></tr>
+<tr><td>灵活性</td><td>极高（支持复杂查询）</td><td>中等</td></tr>
+</tbody>
+</table>
+
+<h3>静态分析工具选型</h3>
+<table>
+<thead><tr><th>工具</th><th>用途</th><th>选择理由</th></tr></thead>
+<tbody>
+<tr><td>Semgrep</td><td>安全漏洞扫描</td><td>规则丰富（OWASP/Bandit），支持多语言，JSON 输出易解析</td></tr>
+<tr><td>Ruff</td><td>代码规范检查</td><td>极速（Rust 实现），替代 flake8+isort+pyupgrade 等多个工具</td></tr>
+<tr><td>pip-audit</td><td>Python 依赖漏洞</td><td>查询 PyPI/OSV 漏洞库，官方推荐</td></tr>
+<tr><td>Python AST</td><td>性能反模式/测试覆盖</td><td>标准库，零依赖，可自定义任意检测规则</td></tr>
+</tbody>
+</table>
+
+<h3>前端技术栈</h3>
+<table>
+<thead><tr><th>技术</th><th>版本</th><th>用途</th></tr></thead>
+<tbody>
+<tr><td>React</td><td>18+</td><td>UI 框架</td></tr>
+<tr><td>TypeScript</td><td>5+</td><td>类型安全</td></tr>
+<tr><td>Vite</td><td>5+</td><td>构建工具（极速 HMR）</td></tr>
+<tr><td>Ant Design</td><td>5+</td><td>UI 组件库</td></tr>
+<tr><td>Zustand</td><td>4+</td><td>轻量状态管理</td></tr>
+<tr><td>Axios</td><td>1+</td><td>HTTP 客户端</td></tr>
+<tr><td>React Router</td><td>6+</td><td>路由管理</td></tr>
+</tbody>
+</table>
+
+<!-- ============================================================ -->
+<!-- 15. 项目目录结构                                                -->
+<!-- ============================================================ -->
+<h2 id="project-structure">15. 项目目录结构</h2>
+
+<pre class="code-block"><code>AICodeReviewTeam/
+├── backend/                          # 后端（FastAPI）
+│   ├── app/
+│   │   ├── main.py                   # FastAPI 应用入口、CORS、生命周期
+│   │   ├── config.py                 # 配置管理（Pydantic Settings）
+│   │   ├── core/
+│   │   │   └── database.py           # SQLAlchemy 引擎、AsyncSession、init_db
+│   │   ├── models/                   # 数据模型
+│   │   │   ├── project.py            # Project 模型
+│   │   │   ├── review.py             # Review 模型
+│   │   │   ├── finding.py            # Finding 模型
+│   │   │   ├── llm_config.py         # LLM 配置模型
+│   │   │   └── llm_usage.py          # LLM 用量记录模型
+│   │   ├── agents/                   # AI Agent 层
+│   │   │   ├── base.py               # BaseAgent 基类 + AgentFinding
+│   │   │   ├── security_agent.py     # 安全审查（Semgrep + LLM）
+│   │   │   ├── code_style_agent.py   # 代码规范（Ruff + LLM）
+│   │   │   ├── dependency_agent.py   # 依赖审查（pip-audit + npm + LLM）
+│   │   │   ├── test_coverage_agent.py# 测试覆盖（AST + LLM）
+│   │   │   ├── performance_agent.py  # 性能分析（AST + LLM）
+│   │   │   ├── git_review_agent.py   # Git 审查（Git CLI + LLM）
+│   │   │   ├── llm_client.py         # 共享 LLM 客户端
+│   │   │   ├── context_enhancer.py   # Agent 上下文增强
+│   │   │   └── utils.py              # 工具函数（代码片段提取等）
+│   │   ├── services/                 # 业务逻辑层
+│   │   │   ├── review_service.py     # 审查编排（Agent 调度 + 聚合）
+│   │   │   ├── health.py             # 健康度评分
+│   │   │   ├── progress.py           # 进度事件总线（发布/订阅）
+│   │   │   ├── metrics.py            # 运行时指标收集
+│   │   │   └── context_engine.py     # 代码库上下文引擎
+│   │   ├── api/
+│   │   │   └── v1/
+│   │   │       ├── router.py         # 路由注册
+│   │   │       ├── projects.py       # 项目 API
+│   │   │       ├── reviews.py        # 审查 API
+│   │   │       ├── system.py         # 系统 API（metrics/health）
+│   │   │       └── docs.py           # 文档 API
+│   │   └── docs_html/                # 静态文档 HTML 文件
+│   │       ├── architecture/         # 架构设计文档
+│   │       ├── agents/               # Agent 能力文档
+│   │       └── guides/               # 使用指南
+│   ├── pyproject.toml                # Python 依赖管理
+│   └── tests/                        # 测试
+│
+├── frontend/                         # 前端（React + TypeScript）
+│   ├── src/
+│   │   ├── main.tsx                  # 入口（BrowserRouter + ConfigProvider）
+│   │   ├── App.tsx                   # 路由定义
+│   │   ├── api/index.ts              # Axios 客户端（/api/v1）
+│   │   ├── components/
+│   │   │   └── Layout/               # 布局组件（MainLayout）
+│   │   ├── pages/
+│   │   │   ├── Dashboard/            # 仪表盘
+│   │   │   ├── Project/              # 项目管理（列表 + 详情）
+│   │   │   ├── Review/               # 审查管理（列表 + 详情 + 触发）
+│   │   │   ├── Settings/             # 设置（LLM 模型配置）
+│   │   │   ├── Docs/                 # 文档页面
+│   │   │   ├── Rules/                # 规则管理
+│   │   │   └── SemanticDiff/         # 语义差异
+│   │   └── stores/                   # Zustand 状态管理
+│   ├── package.json
+│   └── vite.config.ts
+│
+└── README.md</code></pre>
+
+<!-- ============================================================ -->
+<!-- 16. 术语表                                                      -->
+<!-- ============================================================ -->
+<h2 id="glossary">16. 术语表</h2>
+
+<table>
+<thead><tr><th>术语</th><th>英文</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td>Finding</td><td>Finding</td><td>Agent 发现的一个代码问题，包含严重度、文件位置、代码片段、修复建议</td></tr>
+<tr><td>健康度评分</td><td>Health Score</td><td>基于 Finding 的负分制质量分数（0-100），反映项目代码质量</td></tr>
+<tr><td>Agent</td><td>Agent</td><td>负责特定维度代码分析的独立模块，每个 Agent 可包含确定性工具和 LLM 两层</td></tr>
+<tr><td>确定性工具</td><td>Deterministic Tool</td><td>Semgrep/Ruff/pip-audit/AST 等传统静态分析工具，结果可复现，零漏报</td></tr>
+<tr><td>上下文引擎</td><td>Context Engine</td><td>构建代码库索引，为 LLM 分析注入项目级上下文（相关文件、符号引用等）</td></tr>
+<tr><td>事件总线</td><td>Progress Emitter</td><td>内存级发布/订阅系统，驱动 WebSocket 实时推送审查进度</td></tr>
+<tr><td>Agent 注册表</td><td>Agent Registry</td><td>ReviewService 中的字典映射，根据审查类型动态选择 Agent 组合</td></tr>
+<tr><td>负分制</td><td>Negative Scoring</td><td>从 100 分起扣的评分模型，每个 Finding 按严重度扣分</td></tr>
+<tr><td>Conventional Commits</td><td>Conventional Commits</td><td>提交消息规范格式：<code>type(scope): description</code></td></tr>
+<tr><td>N+1 查询</td><td>N+1 Query</td><td>循环内逐条查询数据库的性能反模式，应改为批量查询</td></tr>
+</tbody>
+</table>
+
 </div>

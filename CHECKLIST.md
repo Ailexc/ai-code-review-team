@@ -2,6 +2,13 @@
 
 > 最后更新：2026-08-22（V1.0-V9.3 完成，131 测试，6 Agent 并行 + 全代码库上下文 + PR 历史学习 + 语义 Diff + 可观测性 + AI 测试项目库）
 
+> ## ⚠️ 路线修正记录（2026-08-22）
+>
+> 立项决定采用 **CrewAI Flows + Crews 双层架构**（学习项目核心目标）。开发过程中曾私自降级为手写 `asyncio.gather` 编排，偏离路线 100%。**现已焊死路线**：
+> - 生产主路径 = CrewAI Flows（外层确定性编排） + Crews（内层 Agent 自主协作）；
+> - 下文所有标注 `asyncio.gather` 的历史条目均标记为 **已废弃（DEPRECATED）**；
+> - 禁止任何降级路径/手写编排/把 Flow 当可选骨架。
+
 ## V9.3 Dashboard 学习价值优化 ✅ 完成
 
 - [x] 健康度趋势改为**按项目展示**（柱状图）：
@@ -186,7 +193,7 @@
 
 ### ReviewFlow（CrewAI Flows 双层架构）
 
-- [x] ReviewFlow 骨架（`app/flows/review_flow.py`）— 白盒编排 parse→dispatch→run→aggregate→report（Phase B 完成）
+- [x] ReviewFlow 骨架（`app/flows/review_flow.py`）— 白盒编排 parse→dispatch→run→aggregate→report（Phase B 完成）→ **生产主路径（重构中）**
 
 ---
 
@@ -218,10 +225,10 @@
 ## Phase B（V3.0 代码规范审查 + 多 Agent 编排 + 报告增强）✅ 完成
 
 - [x] CodeStyleAgent（`agents/code_style_agent.py`）— Ruff 静态检查 + LLM 语义点评
-- [x] ReviewService 多 Agent 并行编排（full = security + code_style，asyncio.gather）
+- [x] ~~ReviewService 多 Agent 并行编排（full = security + code_style，asyncio.gather）~~ **已废弃（DEPRECATED，2026-08-22）** — 由 CrewAI Flows + Crews 双层架构重构替代
 - [x] 报告增强：按 Agent 分组 + 补齐 nitpick + HTML 报告（`GET /reviews/{id}/report/html`）
 - [x] 前端审查详情页新增「HTML报告」按钮
-- [x] ReviewFlow（CrewAI Flows 双层编排骨架）+ 3 个编排测试
+- [x] ReviewFlow（CrewAI Flows 双层编排骨架）+ 3 个编排测试 → **已升级为生产主路径（2026-08-22，重构进行中）**
 
 ### 真实跑通的验证
 

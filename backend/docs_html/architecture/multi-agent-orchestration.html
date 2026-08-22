@@ -1,144 +1,208 @@
 <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 900px; line-height: 1.8; color: #333;">
-<h1 id="top">🔀 多 Agent 并行编排</h1>
+<h1 id="top">🔀 多 Agent 编排 — CrewAI Flows + Crews 双层架构</h1>
+
+<div style="background: #fff7e6; border-left: 4px solid #fa8c16; padding: 12px 16px; border-radius: 4px; margin: 16px 0;">
+<strong>⚠️ 路线声明：</strong>本系统的多 Agent 编排<strong>只有</strong> CrewAI Flows + Crews 双层架构这一种方式（学习项目，2026-08-22 焊死）。<strong>禁止</strong>手写 asyncio.gather 编排、禁止任何降级路径、禁止把 Flow 当"可选骨架"。
+</div>
 
 <nav style="background: #fafafa; padding: 16px; border-radius: 8px; margin: 16px 0;">
 <strong>📑 目录</strong>
 <ul>
 <li><a href="#overview" style="color: #1677ff;">1. 设计理念</a></li>
-<li><a href="#architecture" style="color: #1677ff;">2. 编排架构</a></li>
-<li><a href="#parallel" style="color: #1677ff;">3. 并行执行机制</a></li>
-<li><a href="#aggregate" style="color: #1677ff;">4. 结果聚合</a></li>
-<li><a href="#flow" style="color: #1677ff;">5. ReviewFlow 编排</a></li>
-<li><a href="#example" style="color: #1677ff;">6. 代码示例</a></li>
+<li><a href="#architecture" style="color: #1677ff;">2. 双层架构总览</a></li>
+<li><a href="#outer" style="color: #1677ff;">3. 外层 Flow（确定性编排）</a></li>
+<li><a href="#inner" style="color: #1677ff;">4. 内层 Crew（Agent 自主协作）</a></li>
+<li><a href="#parallel" style="color: #1677ff;">5. 并行执行机制</a></li>
+<li><a href="#aggregate" style="color: #1677ff;">6. 结果聚合</a></li>
+<li><a href="#example" style="color: #1677ff;">7. 完整代码示例</a></li>
+<li><a href="#learning" style="color: #1677ff;">8. 学习价值与面试话术</a></li>
 </ul>
 </nav>
 
 <h2 id="overview">1. 设计理念</h2>
-<p>多 Agent 并行编排是本系统的核心架构模式，核心思想是：</p>
+<p>多 Agent 编排是本系统的核心架构模式。为什么用 <strong>CrewAI Flows + Crews 双层</strong>而不是纯 Crew 或手写编排：</p>
 <ul>
-<li><strong>职责分离</strong>：每个 Agent 聚焦一个审查维度（安全/规范/依赖/测试/性能/Git）</li>
-<li><strong>并行执行</strong>：使用 asyncio.gather 并行启动所有 Agent，最小化审查时间</li>
-<li><strong>独立上下文</strong>：每个 Agent 独立分析，互不干扰</li>
-<li><strong>结果聚合</strong>：所有 Agent 完成后统一去重、排序、评分</li>
+<li><strong>外层要确定性，内层要自主性</strong>：任务分解/状态管理/结果聚合必须是白盒、可调试、可中断的确定性流程；各专业 Agent 的审查则是自主的（决定如何调用工具、如何分析）</li>
+<li><strong>纯 Crew 是黑盒</strong>：框架隐式决定任务分配和执行顺序，调试困难，不适合学习</li>
+<li><strong>Flow 是白盒</strong>：每一步都是确定性 Python 代码 + <code>@start/@listen/@router</code> 装饰器，状态可追踪、可断点调试</li>
+<li><strong>学习价值</strong>：掌握 CrewAI 的两种范式，能讲清"何时用 Flow、何时用 Crew、何时结合"</li>
 </ul>
 
-<h2 id="architecture">2. 编排架构</h2>
+<h2 id="architecture">2. 双层架构总览</h2>
 <pre style="background: #f6f8fa; padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 13px; line-height: 1.6;">
-┌─────────────────────────────────────────────────────────────┐
-│                    ReviewService                            │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│  1. 解析审查类型 (security/full/code_style/...)             │
-│                         │                                   │
-│  2. 确定 Agent 列表     │                                   │
-│                         ▼                                   │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │              asyncio.gather 并行执行                 │   │
-│  │                                                     │   │
-│  │  ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐   │   │
-│  │  │安全  │ │规范  │ │依赖  │ │覆盖  │ │性能  │   │   │
-│  │  │Agent │ │Agent │ │Agent │ │Agent │ │Agent │   │   │
-│  │  └──┬───┘ └──┬───┘ └──┬───┘ └──┬───┘ └──┬───┘   │   │
-│  │     │        │        │        │        │         │   │
-│  │  ┌──────┐   │        │        │        │         │   │
-│  │  │Git   │   │        │        │        │         │   │
-│  │  │Agent │   │        │        │        │         │   │
-│  │  └──┬───┘   │        │        │        │         │   │
-│  │     │        │        │        │        │         │   │
-│  │     └────────┴────────┴────────┴────────┘         │   │
-│  │                      │                              │   │
-│  │                      ▼                              │   │
-│  │              ┌──────────────┐                       │   │
-│  │              │  结果聚合    │                       │   │
-│  │              │  去重 + 排序 │                       │   │
-│  │              │  + 评分      │                       │   │
-│  │              └──────────────┘                       │   │
-│  └─────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────┐
+│              外层 ReviewFlow（CrewAI Flow）                    │
+│  确定性控制 · 状态管理（Pydantic model）· 白盒可调试            │
+│                                                               │
+│  @start   parse_project()   → 校验路径 / 初始化状态            │
+│  @listen  run_*_crew() × 6  → 并行触发 6 个内层 Crew（Flow 机制并行）│
+│  @listen  aggregate()       → 去重 / 统计 / 摘要               │
+│  @listen  generate_report() → 完成，输出 ReviewState           │
+└───────────────┬───────────────────────────────────────────────┘
+                │ 并行调度（多个 @listen 节点同时执行）
+    ┌───────────┼───────────┬───────────┬───────────┐
+    ▼           ▼           ▼           ▼           ▼
+┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐
+│安全Crew │ │规范Crew │ │依赖Crew │ │覆盖Crew │ │性能Crew │
+│ Agent   │ │ Agent   │ │ Agent   │ │ Agent   │ │ Agent   │
+│ +Task   │ │ +Task   │ │ +Task   │ │ +Task   │ │ +Task   │
+│ +Tools  │ │ +Tools  │ │ +Tools  │ │ +Tools  │ │ +Tools  │
+└─────────┘ └─────────┘ └─────────┘ └─────────┘ └─────────┘
+                              （GitCrew 同上）
+              内层 Crew：Agent 自主决定如何调用工具完成审查
 </pre>
+<p>关键点：<strong>并行由 Flow 机制本身提供</strong>（多个方法 <code>@listen</code> 同一节点时 CrewAI 并行执行），不依赖手写 asyncio.gather。</p>
 
-<h2 id="parallel">3. 并行执行机制</h2>
-<p>使用 Python asyncio 实现真正的并行执行：</p>
+<h2 id="outer">3. 外层 Flow（确定性编排）</h2>
+<p><code>backend/app/flows/review_flow.py</code> — 外层 Flow 用装饰器声明节点与依赖关系，状态用 Pydantic model 管理：</p>
 <pre style="background: #f6f8fa; padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 13px;">
-# 并行启动所有 Agent
-tasks = [
-    agent.analyze(project_path, file_paths)
-    for agent in agents
-]
-results = await asyncio.gather(*tasks, return_exceptions=True)
-</pre>
+class ReviewState(BaseModel):
+    project_path: str = ""
+    project_name: str = "Unknown"
+    file_paths: list[str] | None = None
+    review_type: str = "full"
+    review_id: str = ""
+    findings_by_agent: dict[str, list[dict]] = Field(default_factory=dict)
+    total_findings: int = 0
+    summary: str = ""
 
-<p><strong>关键特性</strong>：</p>
-<ul>
-<li><strong>真正的并行</strong>：所有 Agent 同时启动，不是串行等待</li>
-<li><strong>异常隔离</strong>：单个 Agent 失败不影响其他 Agent</li>
-<li><strong>超时控制</strong>：每个 Agent 有独立的超时设置</li>
-</ul>
-
-<h2 id="aggregate">4. 结果聚合</h2>
-<p>所有 Agent 完成后，进行统一的结果聚合：</p>
-<ol>
-<li><strong>去重</strong>：按 (rule_id, file_path, line_start) 去重</li>
-<li><strong>排序</strong>：按严重度排序（critical > warning > suggestion）</li>
-<li><strong>评分</strong>：基于 findings 的负分制评分（0-100）</li>
-</ol>
-
-<h2 id="flow">5. ReviewFlow 编排</h2>
-<p>除了直接编排，系统还支持 CrewAI Flows 编排模式：</p>
-<pre style="background: #f6f8fa; padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 13px;">
 class ReviewFlow(Flow[ReviewState]):
     @start()
-    def parse(self):
-        # 解析审查类型
+    def parse_project(self) -> None:
+        """节点1：校验路径 + 发布进度事件"""
         ...
-    
-    @listen(parse)
-    def dispatch(self):
-        # 分发任务到各 Agent
-        ...
-    
-    @listen(dispatch)
-    def run_agents(self):
-        # 并行执行 Agent
-        ...
-    
-    @listen(run_agents)
-    def aggregate(self):
-        # 聚合结果
-        ...
-</pre>
 
-<h2 id="example">6. 代码示例</h2>
-<p>综合审查的完整流程：</p>
+    # 节点2：每个 Agent 一个 @listen(parse_project) 节点 → CrewAI 并行执行
+    @listen(parse_project)
+    async def run_security_crew(self) -> None:
+        await self._run_crew("security")
+
+    @listen(parse_project)
+    async def run_code_style_crew(self) -> None:
+        await self._run_crew("code_style")
+
+    # ...（dependency / test_coverage / performance / git_review 同构）
+
+    @listen(run_security_crew, run_code_style_crew,
+            run_dependency_crew, run_test_coverage_crew,
+            run_performance_crew, run_git_review_crew)
+    def aggregate(self) -> None:
+        """节点3：全部 Crew 完成后聚合去重 + 统计"""
+        ...
+
+    @listen(aggregate)
+    def generate_report(self) -> ReviewState:
+        """节点4：完成，返回最终状态"""
+        return self.state
+</pre>
+<ul>
+<li><strong>@start</strong>：流程入口节点</li>
+<li><strong>@listen(A)</strong>：监听 A 完成后的节点；多个节点监听同一 A 时<strong>并行执行</strong></li>
+<li><strong>@listen(A, B, C)</strong>：等待 A/B/C 全部完成后执行（聚合屏障）</li>
+<li><strong>状态驱动</strong>：<code>self.state</code> 在各节点间传递，可中断/重试/持久化</li>
+</ul>
+
+<h2 id="inner">4. 内层 Crew（Agent 自主协作）</h2>
+<p><code>backend/app/flows/crew_factory.py</code> — 每个专业 Agent 构建一个独立 Crew，实现<strong>上下文隔离</strong>：</p>
 <pre style="background: #f6f8fa; padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 13px;">
-# 1. 创建所有 Agent
-agents = [
-    SecurityAgent(),
-    CodeStyleAgent(),
-    DependencyAgent(),
-    TestCoverageAgent(),
-    PerformanceAgent(),
-    GitReviewAgent(),
-]
+from crewai import Agent, Task, Crew, Process
+from crewai.tools import tool
 
-# 2. 并行执行
-tasks = [agent.analyze(path) for agent in agents]
-results = await asyncio.gather(*tasks)
+# 1. 确定性审查逻辑封装为 CrewAI 工具（Semgrep/Ruff/pip-audit/AST + LLM 分析）
+@tool("security_scan")
+async def security_scan(project_path: str, file_paths: list[str]) -> str:
+    """对项目执行安全扫描，返回结构化 findings JSON"""
+    ...
 
-# 3. 聚合结果
-all_findings = []
-for agent, findings in zip(agents, results):
-    for f in findings:
-        f["agent_name"] = agent.name
-    all_findings.extend(findings)
+# 2. Agent：角色 / 目标 / 背景 / 工具
+security_agent = Agent(
+    role="资深代码安全审查专家",
+    goal="全面检测项目中的安全漏洞（SQL注入、XSS、硬编码密钥等）",
+    backstory="拥有 15 年应用安全经验，精通 OWASP Top 10...",
+    tools=[security_scan],
+    llm=crew_llm,
+    verbose=True,
+)
 
-# 4. 去重 + 排序
-unique = deduplicate(all_findings)
-sorted_findings = sort_by_severity(unique)
+# 3. Task：任务描述 + 期望输出
+security_task = Task(
+    description="审查项目 {project_path}：调用 security_scan 工具获取扫描结果，"
+                "结合你的安全知识补充分析，输出结构化发现列表",
+    expected_output="JSON findings 列表：rule_id / severity / message / file_path / line / suggestion",
+    agent=security_agent,
+)
 
-# 5. 计算健康度
-health_score = calculate_health(sorted_findings)
+# 4. Crew：内层自主协作单元
+security_crew = Crew(
+    agents=[security_agent],
+    tasks=[security_task],
+    process=Process.sequential,  # 单 Agent 场景用 sequential
+    verbose=True,
+)
 </pre>
+<ul>
+<li><strong>Agent</strong>：角色 + 目标 + 背景 + 工具，决定如何完成任务</li>
+<li><strong>Task</strong>：具体任务描述 + 期望输出（可用 <code>output_pydantic</code> 强约束）</li>
+<li><strong>Crew</strong>：组织 Agent 与 Task 的执行单元，<code>Process.sequential</code> / <code>hierarchical</code></li>
+<li><strong>上下文隔离</strong>：每个 Crew 独立，Agent 之间不互相污染</li>
+</ul>
+
+<h2 id="parallel">5. 并行执行机制</h2>
+<p>CrewAI Flow 的并行由<strong>框架机制</strong>提供：多个方法 <code>@listen</code> 同一个上游节点时，CrewAI 会并发执行这些方法。6 个内层 Crew 各自在一个 <code>@listen(parse_project)</code> 节点中 <code>kickoff_async()</code>，从而并行审查。</p>
+<pre style="background: #f6f8fa; padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 13px;">
+# 内层 Crew 并行：每个 @listen 节点独立运行一个 Crew
+@listen(parse_project)
+async def run_security_crew(self):
+    crew = build_review_crew("security", self.state)
+    await crew.kickoff_async(inputs={...})
+    self.state.findings_by_agent["security"] = ...
+
+# 聚合屏障：等 6 个 Crew 全部完成后触发
+@listen(run_security_crew, run_code_style_crew, ...)
+def aggregate(self): ...
+</pre>
+<p><strong>对比手写 asyncio.gather</strong>：手写方案把并行、容错、状态管理全部自己实现（易出错、难调试、无学习价值）；Flows 方案由框架负责调度，开发者只需声明节点依赖关系，且每一步状态可见。</p>
+
+<h2 id="aggregate">6. 结果聚合</h2>
+<p>所有 Crew 完成后，聚合节点统一处理：</p>
+<ol>
+<li><strong>去重</strong>：按 (rule_id, file_path, line_start) 去重（不同 Agent 可能报告同一问题）</li>
+<li><strong>统计</strong>：按严重度统计（critical/warning/suggestion/nitpick）</li>
+<li><strong>摘要</strong>：生成审查摘要文本</li>
+<li><strong>持久化</strong>：由服务层（ReviewService）将 findings 写入数据库</li>
+</ol>
+
+<h2 id="example">7. 完整代码示例</h2>
+<p>生产主路径（重构后）：<code>ReviewService.run_review()</code> 委托给 <code>ReviewFlow</code> 执行编排：</p>
+<pre style="background: #f6f8fa; padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 13px;">
+# 1. 构建 CrewAI LLM（复用项目 LLM 配置）
+llm = build_crew_llm(await get_active_llm_config())
+
+# 2. 运行外层 Flow（内部自动并行调度 6 个内层 Crew）
+flow = ReviewFlow()
+state = await flow.kickoff_async({
+    "project_path": project.path,
+    "file_paths": file_paths,
+    "review_type": review_type,
+    "project_name": project.name,
+    "review_id": review.id,
+})
+
+# 3. 服务层拿到 findings_by_agent 后持久化 / 统计 / 摘要 / 指标
+for agent_name, findings in state.findings_by_agent.items():
+    for f in findings:
+        db.add(Finding(review_id=review.id, agent_name=agent_name, ...))
+</pre>
+
+<h2 id="learning">8. 学习价值与面试话术</h2>
+<div style="background: #f0f5ff; border-left: 4px solid #1677ff; padding: 12px 16px; border-radius: 4px;">
+<strong>🎓 面试话术：</strong>
+<ul>
+<li><strong>Q：你的多 Agent 系统怎么编排？</strong><br/>A：采用 CrewAI Flows + Crews 双层架构——外层 Flow 用 @start/@listen 装饰器做确定性编排（解析→分派→运行→聚合→报告），状态用 Pydantic 管理；内层每个专业 Agent 是一个独立 Crew（Agent + Task + 工具），自主决定如何审查。并行由 Flow 的多个 @listen 节点提供。</li>
+<li><strong>Q：为什么不用纯 Crew 或手写 asyncio？</strong><br/>A：纯 Crew 是黑盒（执行顺序不透明）；手写编排把并行、容错、状态管理全自己实现，没有框架的调试与可观测能力。双层架构外层白盒、内层自主，是 CrewAI 官方推荐范式，也是学习价值最高的组合。</li>
+<li><strong>Q：上下文怎么隔离？</strong><br/>A：每个 Agent 一个独立 Crew，各自独立的上下文，结果由外层 Flow 统一聚合，Agent 之间不直接通信。</li>
+</ul>
+</div>
 
 <p style="text-align: center; margin-top: 40px;"><a href="#top" style="color: #1677ff;">⬆️ 返回顶部</a></p>
 </div>
