@@ -1,6 +1,124 @@
-<div style="font-family: -apple-system, sans-serif; max-width: 800px; line-height: 1.8; color: #333;">
-<h1>📦 依赖审查 Agent</h1>
-<div style="background: #fff7e6; padding: 16px; border-radius: 8px; border-left: 4px solid #faad14; margin: 16px 0;">
-<strong>📝 文档编写中</strong> — 本文档正在完善中，敬请期待。
+<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 900px; line-height: 1.8; color: #333;">
+<h1 id="top">📦 依赖审查 Agent</h1>
+
+<div style="background: #e6f7ff; padding: 16px; border-radius: 8px; border-left: 4px solid #1677ff; margin: 16px 0;">
+<strong>📦 工具链：</strong>pip-audit + npm registry + LLM &nbsp;&nbsp;|&nbsp;&nbsp;
+<strong>⏱️ 预计耗时：</strong>90-120s &nbsp;&nbsp;|&nbsp;&nbsp;
+<strong>📊 输出：</strong>漏洞列表 + 过时版本列表 + 升级建议
 </div>
+
+<nav style="background: #fafafa; padding: 16px; border-radius: 8px; margin: 16px 0;">
+<strong>📑 目录</strong>
+<ul>
+<li><a href="#overview" style="color: #1677ff;">1. 功能概述</a></li>
+<li><a href="#architecture" style="color: #1677ff;">2. 架构设计</a></li>
+<li><a href="#python" style="color: #1677ff;">3. Python 依赖审计</a></li>
+<li><a href="#npm" style="color: #1677ff;">4. npm 过时检测</a></li>
+<li><a href="#llm" style="color: #1677ff;">5. LLM 风险点评</a></li>
+<li><a href="#rules" style="color: #1677ff;">6. 检测规则详解</a></li>
+<li><a href="#example" style="color: #1677ff;">7. 实际案例</a></li>
+</ul>
+</nav>
+
+<h2 id="overview">1. 功能概述</h2>
+<p>依赖审查 Agent 负责检测项目依赖中的已知漏洞和过时版本。它支持 Python 和 JavaScript 两种生态系统：</p>
+<ol>
+<li><strong>Python 依赖</strong>：使用 pip-audit 查询 PyPI/OSV 漏洞库</li>
+<li><strong>JavaScript 依赖</strong>：查询 npm registry 检测过时版本</li>
+<li><strong>LLM 风险点评</strong>：分析依赖清单，识别风险/弃用/许可证问题</li>
+</ol>
+
+<h2 id="architecture">2. 架构设计</h2>
+<pre style="background: #f6f8fa; padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 13px; line-height: 1.6;">
+┌─────────────────────────────────────────────────────────────┐
+│                   DependencyAgent                           │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
+│  │  pip-audit   │  │ npm registry │  │  LLM 分析    │     │
+│  │              │  │              │  │              │     │
+│  │  • CVE 漏洞  │  │  • 过时版本  │  │  • 风险评估  │     │
+│  │  • PyPI/OSV  │  │  • 最新版本  │  │  • 许可证    │     │
+│  │              │  │              │  │  • 弃用包    │     │
+│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘     │
+│         │                 │                 │              │
+│         └─────────────────┼─────────────────┘              │
+│                           ▼                                │
+│                 ┌─────────────────┐                        │
+│                 │   结果聚合      │                        │
+│                 └─────────────────┘                        │
+└─────────────────────────────────────────────────────────────┘
+</pre>
+
+<h2 id="python">3. Python 依赖审计</h2>
+<p>使用 pip-audit 扫描 Python 项目的依赖漏洞：</p>
+<ul>
+<li><strong>支持的清单文件</strong>：requirements.txt、pyproject.toml、setup.py、Pipfile</li>
+<li><strong>漏洞库</strong>：PyPI + OSV（Open Source Vulnerabilities）</li>
+<li><strong>输出</strong>：CVE ID、漏洞描述、修复版本</li>
+</ul>
+
+<table style="border-collapse: collapse; width: 100%; margin: 16px 0;">
+<tr style="background: #f6f8fa;"><th style="padding: 8px; border: 1px solid #ddd;">CVSS 评分</th><th style="padding: 8px; border: 1px solid #ddd;">严重度</th><th style="padding: 8px; border: 1px solid #ddd;">说明</th></tr>
+<tr><td style="padding: 8px; border: 1px solid #ddd;">≥ 9.0</td><td style="padding: 8px; border: 1px solid #ddd; color: red;">critical</td><td style="padding: 8px; border: 1px solid #ddd;">严重漏洞，需立即修复</td></tr>
+<tr><td style="padding: 8px; border: 1px solid #ddd;">≥ 7.0</td><td style="padding: 8px; border: 1px solid #ddd; color: #faad14;">warning</td><td style="padding: 8px; border: 1px solid #ddd;">高危漏洞，建议尽快修复</td></tr>
+<tr><td style="padding: 8px; border: 1px solid #ddd;">≥ 4.0</td><td style="padding: 8px; border: 1px solid #ddd;">suggestion</td><td style="padding: 8px; border: 1px solid #ddd;">中低危漏洞，择机修复</td></tr>
+</table>
+
+<h2 id="npm">4. npm 过时检测</h2>
+<p>查询 npm registry 检测 JavaScript 项目的过时依赖：</p>
+<ul>
+<li><strong>检测方式</strong>：异步并发查询（Semaphore=5 限制并发数）</li>
+<li><strong>比较逻辑</strong>：声明版本 vs 最新稳定版</li>
+<li><strong>超时控制</strong>：单个包 15s 超时</li>
+</ul>
+
+<h2 id="llm">5. LLM 风险点评</h2>
+<p>LLM 分析层补充工具难以发现的依赖风险：</p>
+<ul>
+<li><strong>已知漏洞历史</strong>：旧版 django/flask/requests/lodash/axios 等</li>
+<li><strong>过时或未维护</strong>：长期未更新的包</li>
+<li><strong>冗余或冲突</strong>：功能重复的依赖</li>
+<li><strong>版本约束缺失</strong>：未固定版本的包</li>
+<li><strong>许可证风险</strong>：不安全的许可证或来源不明的包</li>
+</ul>
+
+<h2 id="rules">6. 检测规则详解</h2>
+<table style="border-collapse: collapse; width: 100%; margin: 16px 0;">
+<tr style="background: #f6f8fa;"><th style="padding: 8px; border: 1px solid #ddd;">规则 ID</th><th style="padding: 8px; border: 1px solid #ddd;">检测项</th><th style="padding: 8px; border: 1px solid #ddd;">严重度</th><th style="padding: 8px; border: 1px solid #ddd;">说明</th></tr>
+<tr><td style="padding: 8px; border: 1px solid #ddd;">PIP-AUDIT-*</td><td style="padding: 8px; border: 1px solid #ddd;">CVE 漏洞</td><td style="padding: 8px; border: 1px solid #ddd; color: red;">按 CVSS 评分</td><td style="padding: 8px; border: 1px solid #ddd;">pip-audit 发现的已知漏洞</td></tr>
+<tr><td style="padding: 8px; border: 1px solid #ddd;">NPM-OUTDATED</td><td style="padding: 8px; border: 1px solid #ddd;">过时依赖</td><td style="padding: 8px; border: 1px solid #ddd; color: #faad14;">warning</td><td style="padding: 8px; border: 1px solid #ddd;">版本落后于最新稳定版</td></tr>
+<tr><td style="padding: 8px; border: 1px solid #ddd;">LLM-DEP</td><td style="padding: 8px; border: 1px solid #ddd;">LLM 风险分析</td><td style="padding: 8px; border: 1px solid #ddd;">suggestion</td><td style="padding: 8px; border: 1px solid #ddd;">LLM 发现的依赖风险</td></tr>
+</table>
+
+<h2 id="example">7. 实际案例</h2>
+<h3>❌ 有问题的依赖</h3>
+<pre style="background: #fff1f0; padding: 12px; border-radius: 6px; border-left: 3px solid #ff4d4f;"><code># requirements.txt
+django==2.2.0        # 已停止维护，存在多个 CVE
+requests==2.20.0     # 存在安全漏洞
+flask==1.0           # 版本过旧
+
+# package.json
+{
+  "dependencies": {
+    "lodash": "4.17.15",  # 存在原型污染漏洞
+    "axios": "0.21.0"     # 存在 SSRF 漏洞
+  }
+}</code></pre>
+
+<h3>✅ 修复后</h3>
+<pre style="background: #f6ffed; padding: 12px; border-radius: 6px; border-left: 3px solid #52c41a;"><code># requirements.txt
+django>=4.2,<5.0     # LTS 版本，持续维护
+requests>=2.31.0     # 最新稳定版
+flask>=3.0           # 最新稳定版
+
+# package.json
+{
+  "dependencies": {
+    "lodash": "4.17.21",  # 最新安全版本
+    "axios": "1.6.0"      # 最新稳定版
+  }
+}</code></pre>
+
+<p style="text-align: center; margin-top: 40px;"><a href="#top" style="color: #1677ff;">⬆️ 返回顶部</a></p>
 </div>

@@ -9,7 +9,7 @@ from typing import Optional
 router = APIRouter()
 
 # 文档根目录
-DOCS_DIR = Path(__file__).resolve().parent.parent.parent / "docs_html"
+DOCS_DIR = Path(__file__).resolve().parent.parent.parent.parent.parent / "docs_html"
 
 # 文档元数据（静态配置，也可从文件中读取）
 DOCS_CATALOG = [

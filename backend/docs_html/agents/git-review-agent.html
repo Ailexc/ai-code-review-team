@@ -1,6 +1,104 @@
-<div style="font-family: -apple-system, sans-serif; max-width: 800px; line-height: 1.8; color: #333;">
-<h1>🌿 Git 审查 Agent</h1>
-<div style="background: #fff7e6; padding: 16px; border-radius: 8px; border-left: 4px solid #faad14; margin: 16px 0;">
-<strong>📝 文档编写中</strong> — 本文档正在完善中，敬请期待。
+<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 900px; line-height: 1.8; color: #333;">
+<h1 id="top">🌿 Git 审查 Agent</h1>
+
+<div style="background: #e6fffb; padding: 16px; border-radius: 8px; border-left: 4px solid #13c2c2; margin: 16px 0;">
+<strong>📦 工具链：</strong>GitPython + LLM &nbsp;&nbsp;|&nbsp;&nbsp;
+<strong>⏱️ 预计耗时：</strong>40-60s &nbsp;&nbsp;|&nbsp;&nbsp;
+<strong>📊 输出：</strong>规范评分 + 改进建议
 </div>
+
+<nav style="background: #fafafa; padding: 16px; border-radius: 8px; margin: 16px 0;">
+<strong>📑 目录</strong>
+<ul>
+<li><a href="#overview" style="color: #1677ff;">1. 功能概述</a></li>
+<li><a href="#architecture" style="color: #1677ff;">2. 架构设计</a></li>
+<li><a href="#conventions" style="color: #1677ff;">3. 提交规范检查</a></li>
+<li><a href="#branch" style="color: #1677ff;">4. 分支策略分析</a></li>
+<li><a href="#contributions" style="color: #1677ff;">5. 贡献统计</a></li>
+<li><a href="#llm" style="color: #1677ff;">6. LLM 点评</a></li>
+<li><a href="#rules" style="color: #1677ff;">7. 检测规则详解</a></li>
+</ul>
+</nav>
+
+<h2 id="overview">1. 功能概述</h2>
+<p>Git 审查 Agent 分析 Git 仓库的提交规范和分支健康度：</p>
+<ol>
+<li><strong>提交规范</strong>：检查是否遵循 Conventional Commits 格式</li>
+<li><strong>分支策略</strong>：检查分支命名规范和主分支保护</li>
+<li><strong>贡献统计</strong>：分析活跃度、文件热点、提交频率</li>
+<li><strong>LLM 点评</strong>：对提交消息质量进行语义评价</li>
+</ol>
+
+<h2 id="architecture">2. 架构设计</h2>
+<pre style="background: #f6f8fa; padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 13px; line-height: 1.6;">
+┌─────────────────────────────────────────────────────────────┐
+│                    GitReviewAgent                           │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
+│  │  提交规范    │  │  分支策略    │  │  贡献统计    │     │
+│  │              │  │              │  │              │     │
+│  │  • 格式检查  │  │  • 命名规范  │  │  • 活跃度    │     │
+│  │  • 消息质量  │  │  • 主分支    │  │  • 文件热点  │     │
+│  │              │  │  • 陈旧分支  │  │  • 提交频率  │     │
+│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘     │
+│         │                 │                 │              │
+│         └─────────────────┼─────────────────┘              │
+│                           ▼                                │
+│                 ┌─────────────────┐                        │
+│                 │   LLM 点评      │                        │
+│                 └─────────────────┘                        │
+└─────────────────────────────────────────────────────────────┘
+</pre>
+
+<h2 id="conventions">3. 提交规范检查</h2>
+<p>检查最近 50 条提交是否遵循 <strong>Conventional Commits</strong> 规范：</p>
+<pre style="background: #f6f8fa; padding: 12px; border-radius: 6px; font-size: 13px;">
+&lt;type&gt;(&lt;scope&gt;): &lt;description&gt;
+</pre>
+
+<table style="border-collapse: collapse; width: 100%; margin: 16px 0;">
+<tr style="background: #f6f8fa;"><th style="padding: 8px; border: 1px solid #ddd;">类型</th><th style="padding: 8px; border: 1px solid #ddd;">说明</th><th style="padding: 8px; border: 1px solid #ddd;">示例</th></tr>
+<tr><td style="padding: 8px; border: 1px solid #ddd;">feat</td><td style="padding: 8px; border: 1px solid #ddd;">新功能</td><td style="padding: 8px; border: 1px solid #ddd;">feat(auth): 添加 OAuth 登录</td></tr>
+<tr><td style="padding: 8px; border: 1px solid #ddd;">fix</td><td style="padding: 8px; border: 1px solid #ddd;">修复</td><td style="padding: 8px; border: 1px solid #ddd;">fix(api): 修复分页参数校验</td></tr>
+<tr><td style="padding: 8px; border: 1px solid #ddd;">docs</td><td style="padding: 8px; border: 1px solid #ddd;">文档</td><td style="padding: 8px; border: 1px solid #ddd;">docs: 更新 API 文档</td></tr>
+<tr><td style="padding: 8px; border: 1px solid #ddd;">refactor</td><td style="padding: 8px; border: 1px solid #ddd;">重构</td><td style="padding: 8px; border: 1px solid #ddd;">refactor(db): 优化查询逻辑</td></tr>
+<tr><td style="padding: 8px; border: 1px solid #ddd;">perf</td><td style="padding: 8px; border: 1px solid #ddd;">性能</td><td style="padding: 8px; border: 1px solid #ddd;">perf(cache): 添加 Redis 缓存</td></tr>
+</table>
+
+<h2 id="branch">4. 分支策略分析</h2>
+<p>检查分支命名是否符合规范：</p>
+<ul>
+<li><strong>主分支</strong>：main / master / develop</li>
+<li><strong>功能分支</strong>：feature/description</li>
+<li><strong>修复分支</strong>：fix/description</li>
+<li><strong>发布分支</strong>：release/version</li>
+</ul>
+
+<h2 id="contributions">5. 贡献统计</h2>
+<p>分析仓库的贡献数据：</p>
+<ul>
+<li><strong>文件热点</strong>：哪些文件被修改最频繁</li>
+<li><strong>提交频率</strong>：按时间统计提交数量</li>
+<li><strong>活跃度</strong>：最近提交的时间分布</li>
+</ul>
+
+<h2 id="llm">6. LLM 点评</h2>
+<p>LLM 对提交历史进行语义分析：</p>
+<ul>
+<li><strong>提交消息质量</strong>：是否清晰描述变更内容</li>
+<li><strong>提交粒度</strong>：单次提交是否包含过多不相关变更</li>
+<li><strong>安全风险</strong>：是否有敏感信息泄露（密码、token）</li>
+</ul>
+
+<h2 id="rules">7. 检测规则详解</h2>
+<table style="border-collapse: collapse; width: 100%; margin: 16px 0;">
+<tr style="background: #f6f8fa;"><th style="padding: 8px; border: 1px solid #ddd;">规则 ID</th><th style="padding: 8px; border: 1px solid #ddd;">检测项</th><th style="padding: 8px; border: 1px solid #ddd;">严重度</th><th style="padding: 8px; border: 1px solid #ddd;">说明</th></tr>
+<tr><td style="padding: 8px; border: 1px solid #ddd;">GIT-CONVENTION</td><td style="padding: 8px; border: 1px solid #ddd;">提交不规范</td><td style="padding: 8px; border: 1px solid #ddd; color: #faad14;">warning</td><td style="padding: 8px; border: 1px solid #ddd;">提交消息不符合 Conventional Commits</td></tr>
+<tr><td style="padding: 8px; border: 1px solid #ddd;">GIT-MESSAGE</td><td style="padding: 8px; border: 1px solid #ddd;">消息过短</td><td style="padding: 8px; border: 1px solid #ddd;">suggestion</td><td style="padding: 8px; border: 1px solid #ddd;">提交消息描述过于简短</td></tr>
+<tr><td style="padding: 8px; border: 1px solid #ddd;">GIT-BRANCH</td><td style="padding: 8px; border: 1px solid #ddd;">分支命名</td><td style="padding: 8px; border: 1px solid #ddd;">suggestion</td><td style="padding: 8px; border: 1px solid #ddd;">分支命名不符合规范</td></tr>
+<tr><td style="padding: 8px; border: 1px solid #ddd;">LLM-GIT</td><td style="padding: 8px; border: 1px solid #ddd;">LLM 点评</td><td style="padding: 8px; border: 1px solid #ddd;">suggestion</td><td style="padding: 8px; border: 1px solid #ddd;">LLM 发现的 Git 工作流问题</td></tr>
+</table>
+
+<p style="text-align: center; margin-top: 40px;"><a href="#top" style="color: #1677ff;">⬆️ 返回顶部</a></p>
 </div>

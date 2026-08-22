@@ -1,6 +1,79 @@
-<div style="font-family: -apple-system, sans-serif; max-width: 800px; line-height: 1.8; color: #333;">
-<h1>🔧 AutoFix 自动修复</h1>
-<div style="background: #fff7e6; padding: 16px; border-radius: 8px; border-left: 4px solid #faad14; margin: 16px 0;">
-<strong>📝 文档编写中</strong> — 本文档正在完善中，敬请期待。
-</div>
+<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 900px; line-height: 1.8; color: #333;">
+<h1 id="top">🔧 AutoFix 自动修复</h1>
+<nav style="background: #fafafa; padding: 16px; border-radius: 8px; margin: 16px 0;">
+<strong>📑 目录</strong>
+<ul>
+<li><a href="#overview" style="color: #1677ff;">1. 功能概述</a></li>
+<li><a href="#architecture" style="color: #1677ff;">2. 架构设计</a></li>
+<li><a href="#ruff-fix" style="color: #1677ff;">3. Ruff 自动修复</a></li>
+<li><a href="#workflow" style="color: #1677ff;">4. 使用流程</a></li>
+<li><a href="#example" style="color: #1677ff;">5. 实际案例</a></li>
+</ul>
+</nav>
+<h2 id="overview">1. 功能概述</h2>
+<p>AutoFix 自动修复引擎消费审查发现中的 <code>is_auto_fixable</code> 标记，生成修复补丁：</p>
+<ol>
+<li><strong>Ruff 自动修复</strong>：import 排序、格式化、简单 lint（确定性，直接改文件）</li>
+<li><strong>LLM 辅助修复</strong>：复杂代码问题的智能补丁（需人工确认）</li>
+</ol>
+<h2 id="architecture">2. 架构设计</h2>
+<pre style="background: #f6f8fa; padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 13px; line-height: 1.6;">
+┌─────────────────────────────────────────────────────┐
+│               AutoFixEngine                         │
+├─────────────────────────────────────────────────────┤
+│  输入：findings（含 is_auto_fixable 标记）         │
+│                        ▼                            │
+│  ┌─────────────────────────────────────────────┐   │
+│  │  过滤可修复项                               │   │
+│  └─────────────────────────────────────────────┘   │
+│           │                    │                    │
+│           ▼                    ▼                    │
+│  ┌─────────────────┐  ┌─────────────────┐          │
+│  │   Ruff 修复     │  │   LLM 修复      │          │
+│  │  import 排序    │  │  逻辑修复       │          │
+│  │  格式化         │  │  代码重构       │          │
+│  └────────┬────────┘  └────────┬────────┘          │
+│           └────────────┬───────┘                    │
+│                        ▼                            │
+│              ┌─────────────────┐                    │
+│              │   生成补丁      │                    │
+│              │   + 应用/预览   │                    │
+│              └─────────────────┘                    │
+└─────────────────────────────────────────────────────┘
+</pre>
+<h2 id="ruff-fix">3. Ruff 自动修复</h2>
+<table style="border-collapse: collapse; width: 100%; margin: 16px 0;">
+<tr style="background: #f6f8fa;"><th style="padding: 8px; border: 1px solid #ddd;">规则</th><th style="padding: 8px; border: 1px solid #ddd;">修复内容</th></tr>
+<tr><td style="padding: 8px; border: 1px solid #ddd;">F401</td><td style="padding: 8px; border: 1px solid #ddd;">移除未使用的 import</td></tr>
+<tr><td style="padding: 8px; border: 1px solid #ddd;">F841</td><td style="padding: 8px; border: 1px solid #ddd;">移除未使用的变量</td></tr>
+<tr><td style="padding: 8px; border: 1px solid #ddd;">I001</td><td style="padding: 8px; border: 1px solid #ddd;">自动排序 import</td></tr>
+<tr><td style="padding: 8px; border: 1px solid #ddd;">E/W</td><td style="padding: 8px; border: 1px solid #ddd;">格式化修复</td></tr>
+<tr><td style="padding: 8px; border: 1px solid #ddd;">UP</td><td style="padding: 8px; border: 1px solid #ddd;">语法升级</td></tr>
+</table>
+<h2 id="workflow">4. 使用流程</h2>
+<ol>
+<li>在审查详情页查看 findings</li>
+<li>点击「自动修复」按钮</li>
+<li>系统列出可自动修复的问题</li>
+<li>点击「预览补丁」查看修复内容的 diff</li>
+<li>确认后点击「应用修复」</li>
+</ol>
+<h2 id="example">5. 实际案例</h2>
+<h3>修复前</h3>
+<pre style="background: #fff1f0; padding: 12px; border-radius: 6px; border-left: 3px solid #ff4d4f;"><code>import os
+import sys
+import json  # 未使用
+import requests  # 未使用
+
+def calc(x,y):  # 格式问题
+    result=x+y
+    return result</code></pre>
+<h3>修复后</h3>
+<pre style="background: #f6ffed; padding: 12px; border-radius: 6px; border-left: 3px solid #52c41a;"><code>import os
+import sys
+
+def calc(x, y):  # 格式修复
+    result = x + y
+    return result</code></pre>
+<p style="text-align: center; margin-top: 40px;"><a href="#top" style="color: #1677ff;">⬆️ 返回顶部</a></p>
 </div>

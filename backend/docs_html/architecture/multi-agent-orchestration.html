@@ -1,6 +1,144 @@
-<div style="font-family: -apple-system, sans-serif; max-width: 800px; line-height: 1.8; color: #333;">
-<h1>🔀 多 Agent 并行编排</h1>
-<div style="background: #fff7e6; padding: 16px; border-radius: 8px; border-left: 4px solid #faad14; margin: 16px 0;">
-<strong>📝 文档编写中</strong> — 本文档正在完善中，敬请期待。
-</div>
+<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 900px; line-height: 1.8; color: #333;">
+<h1 id="top">🔀 多 Agent 并行编排</h1>
+
+<nav style="background: #fafafa; padding: 16px; border-radius: 8px; margin: 16px 0;">
+<strong>📑 目录</strong>
+<ul>
+<li><a href="#overview" style="color: #1677ff;">1. 设计理念</a></li>
+<li><a href="#architecture" style="color: #1677ff;">2. 编排架构</a></li>
+<li><a href="#parallel" style="color: #1677ff;">3. 并行执行机制</a></li>
+<li><a href="#aggregate" style="color: #1677ff;">4. 结果聚合</a></li>
+<li><a href="#flow" style="color: #1677ff;">5. ReviewFlow 编排</a></li>
+<li><a href="#example" style="color: #1677ff;">6. 代码示例</a></li>
+</ul>
+</nav>
+
+<h2 id="overview">1. 设计理念</h2>
+<p>多 Agent 并行编排是本系统的核心架构模式，核心思想是：</p>
+<ul>
+<li><strong>职责分离</strong>：每个 Agent 聚焦一个审查维度（安全/规范/依赖/测试/性能/Git）</li>
+<li><strong>并行执行</strong>：使用 asyncio.gather 并行启动所有 Agent，最小化审查时间</li>
+<li><strong>独立上下文</strong>：每个 Agent 独立分析，互不干扰</li>
+<li><strong>结果聚合</strong>：所有 Agent 完成后统一去重、排序、评分</li>
+</ul>
+
+<h2 id="architecture">2. 编排架构</h2>
+<pre style="background: #f6f8fa; padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 13px; line-height: 1.6;">
+┌─────────────────────────────────────────────────────────────┐
+│                    ReviewService                            │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  1. 解析审查类型 (security/full/code_style/...)             │
+│                         │                                   │
+│  2. 确定 Agent 列表     │                                   │
+│                         ▼                                   │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │              asyncio.gather 并行执行                 │   │
+│  │                                                     │   │
+│  │  ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐   │   │
+│  │  │安全  │ │规范  │ │依赖  │ │覆盖  │ │性能  │   │   │
+│  │  │Agent │ │Agent │ │Agent │ │Agent │ │Agent │   │   │
+│  │  └──┬───┘ └──┬───┘ └──┬───┘ └──┬───┘ └──┬───┘   │   │
+│  │     │        │        │        │        │         │   │
+│  │  ┌──────┐   │        │        │        │         │   │
+│  │  │Git   │   │        │        │        │         │   │
+│  │  │Agent │   │        │        │        │         │   │
+│  │  └──┬───┘   │        │        │        │         │   │
+│  │     │        │        │        │        │         │   │
+│  │     └────────┴────────┴────────┴────────┘         │   │
+│  │                      │                              │   │
+│  │                      ▼                              │   │
+│  │              ┌──────────────┐                       │   │
+│  │              │  结果聚合    │                       │   │
+│  │              │  去重 + 排序 │                       │   │
+│  │              │  + 评分      │                       │   │
+│  │              └──────────────┘                       │   │
+│  └─────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+</pre>
+
+<h2 id="parallel">3. 并行执行机制</h2>
+<p>使用 Python asyncio 实现真正的并行执行：</p>
+<pre style="background: #f6f8fa; padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 13px;">
+# 并行启动所有 Agent
+tasks = [
+    agent.analyze(project_path, file_paths)
+    for agent in agents
+]
+results = await asyncio.gather(*tasks, return_exceptions=True)
+</pre>
+
+<p><strong>关键特性</strong>：</p>
+<ul>
+<li><strong>真正的并行</strong>：所有 Agent 同时启动，不是串行等待</li>
+<li><strong>异常隔离</strong>：单个 Agent 失败不影响其他 Agent</li>
+<li><strong>超时控制</strong>：每个 Agent 有独立的超时设置</li>
+</ul>
+
+<h2 id="aggregate">4. 结果聚合</h2>
+<p>所有 Agent 完成后，进行统一的结果聚合：</p>
+<ol>
+<li><strong>去重</strong>：按 (rule_id, file_path, line_start) 去重</li>
+<li><strong>排序</strong>：按严重度排序（critical > warning > suggestion）</li>
+<li><strong>评分</strong>：基于 findings 的负分制评分（0-100）</li>
+</ol>
+
+<h2 id="flow">5. ReviewFlow 编排</h2>
+<p>除了直接编排，系统还支持 CrewAI Flows 编排模式：</p>
+<pre style="background: #f6f8fa; padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 13px;">
+class ReviewFlow(Flow[ReviewState]):
+    @start()
+    def parse(self):
+        # 解析审查类型
+        ...
+    
+    @listen(parse)
+    def dispatch(self):
+        # 分发任务到各 Agent
+        ...
+    
+    @listen(dispatch)
+    def run_agents(self):
+        # 并行执行 Agent
+        ...
+    
+    @listen(run_agents)
+    def aggregate(self):
+        # 聚合结果
+        ...
+</pre>
+
+<h2 id="example">6. 代码示例</h2>
+<p>综合审查的完整流程：</p>
+<pre style="background: #f6f8fa; padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 13px;">
+# 1. 创建所有 Agent
+agents = [
+    SecurityAgent(),
+    CodeStyleAgent(),
+    DependencyAgent(),
+    TestCoverageAgent(),
+    PerformanceAgent(),
+    GitReviewAgent(),
+]
+
+# 2. 并行执行
+tasks = [agent.analyze(path) for agent in agents]
+results = await asyncio.gather(*tasks)
+
+# 3. 聚合结果
+all_findings = []
+for agent, findings in zip(agents, results):
+    for f in findings:
+        f["agent_name"] = agent.name
+    all_findings.extend(findings)
+
+# 4. 去重 + 排序
+unique = deduplicate(all_findings)
+sorted_findings = sort_by_severity(unique)
+
+# 5. 计算健康度
+health_score = calculate_health(sorted_findings)
+</pre>
+
+<p style="text-align: center; margin-top: 40px;"><a href="#top" style="color: #1677ff;">⬆️ 返回顶部</a></p>
 </div>

@@ -1,6 +1,61 @@
-<div style="font-family: -apple-system, sans-serif; max-width: 800px; line-height: 1.8; color: #333;">
-<h1>📊 增量审查</h1>
-<div style="background: #fff7e6; padding: 16px; border-radius: 8px; border-left: 4px solid #faad14; margin: 16px 0;">
-<strong>📝 文档编写中</strong> — 本文档正在完善中，敬请期待。
-</div>
+<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 900px; line-height: 1.8; color: #333;">
+<h1 id="top">📊 增量审查</h1>
+<nav style="background: #fafafa; padding: 16px; border-radius: 8px; margin: 16px 0;">
+<strong>📑 目录</strong>
+<ul>
+<li><a href="#overview" style="color: #1677ff;">1. 功能概述</a></li>
+<li><a href="#semantic-diff" style="color: #1677ff;">2. 语义 Diff</a></li>
+<li><a href="#impact" style="color: #1677ff;">3. 影响分析</a></li>
+<li><a href="#workflow" style="color: #1677ff;">4. 使用流程</a></li>
+<li><a href="#example" style="color: #1677ff;">5. 实际案例</a></li>
+</ul>
+</nav>
+<h2 id="overview">1. 功能概述</h2>
+<p>增量审查专注于 Git diff 场景，只审查变更的代码：</p>
+<ol>
+<li><strong>语义 Diff</strong>：AST 级结构化变更识别（函数/类级别）</li>
+<li><strong>影响分析</strong>：变更影响哪些调用方</li>
+<li><strong>意图分析</strong>：LLM 分析变更目的和风险</li>
+</ol>
+<h2 id="semantic-diff">2. 语义 Diff</h2>
+<p>AST 级 Diff 识别函数/类级别的变更：</p>
+<table style="border-collapse: collapse; width: 100%; margin: 16px 0;">
+<tr style="background: #f6f8fa;"><th style="padding: 8px; border: 1px solid #ddd;">变更类型</th><th style="padding: 8px; border: 1px solid #ddd;">说明</th><th style="padding: 8px; border: 1px solid #ddd;">风险</th></tr>
+<tr><td style="padding: 8px; border: 1px solid #ddd;">新增</td><td style="padding: 8px; border: 1px solid #ddd;">新增函数/类</td><td style="padding: 8px; border: 1px solid #ddd;">低</td></tr>
+<tr><td style="padding: 8px; border: 1px solid #ddd;">修改</td><td style="padding: 8px; border: 1px solid #ddd;">修改现有函数/类</td><td style="padding: 8px; border: 1px solid #ddd;">中</td></tr>
+<tr><td style="padding: 8px; border: 1px solid #ddd;">删除</td><td style="padding: 8px; border: 1px solid #ddd;">删除函数/类</td><td style="padding: 8px; border: 1px solid #ddd;">高</td></tr>
+</table>
+<h2 id="impact">3. 影响分析</h2>
+<ul>
+<li><strong>直接调用方</strong>：哪些函数调用了变更的函数</li>
+<li><strong>间接影响</strong>：调用方的调用方（传递影响）</li>
+<li><strong>风险分级</strong>：根据影响范围评估风险等级</li>
+</ul>
+<h2 id="workflow">4. 使用流程</h2>
+<ol>
+<li>选择要审查的 Git 项目</li>
+<li>指定 base 和 head commit</li>
+<li>系统自动进行语义 Diff 分析</li>
+<li>查看结构化变更和影响分析</li>
+</ol>
+<h2 id="example">5. 实际案例</h2>
+<pre style="background: #f6f8fa; padding: 12px; border-radius: 6px; font-size: 13px;">
+# Git diff 显示修改了 get_user 函数
+- def get_user(user_id):
+-     return session.query(User).filter(User.id == user_id).first()
++ def get_user(user_id):
++     return session.query(User).filter(User.id == user_id).first() or None
+</pre>
+<h3>语义 Diff 结果</h3>
+<pre style="background: #f6f8fa; padding: 12px; border-radius: 6px; font-size: 13px;">
+{
+  "structural_changes": [
+    {"type": "modified", "name": "get_user", "file": "app/models/user.py"}
+  ],
+  "impact_analysis": [
+    {"caller": "get_current_user", "file": "app/api/auth.py", "risk": "medium"}
+  ]
+}
+</pre>
+<p style="text-align: center; margin-top: 40px;"><a href="#top" style="color: #1677ff;">⬆️ 返回顶部</a></p>
 </div>

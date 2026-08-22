@@ -161,7 +161,7 @@ export default function ReviewTrigger() {
   const cap = CAPABILITIES.find(c => c.key === selectedKey) || CAPABILITIES[6];
 
   const openDoc = () => {
-    navigate('/docs');
+    navigate(`/docs?doc=${cap.docId}&category=${cap.docCategory}`);
   };
 
   return (
