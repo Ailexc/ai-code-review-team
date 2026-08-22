@@ -86,7 +86,7 @@ const CAPABILITIES = [
     dimensions: ['安全 + 规范 + 依赖 + 测试 + 性能 + Git'],
     avgTime: '3-5min',
     output: '全维度问题汇总 + 按严重度排序',
-    principle: '通过 asyncio.gather 并行启动全部 6 个 Agent，各自独立分析后聚合结果：去重、按严重度排序、计算健康度评分。这是多 Agent 协作的核心演示。',
+    principle: '采用 CrewAI Flows + Crews 双层架构：外层 Flow 用 @start/@listen 装饰器做确定性编排（解析 → 并行分派 → 聚合 → 报告），内层每个专业 Agent 是独立 Crew（Agent + Task + 工具），并行由 Flow 的多 @listen 节点提供。这是多 Agent 协作的核心演示，也是本项目学习 CrewAI 的主路径。',
     docCategory: 'architecture', docId: 'multi-agent-orchestration',
     recommended: true,
   },
@@ -170,6 +170,18 @@ export default function ReviewTrigger() {
       <Typography.Paragraph type="secondary" style={{ marginBottom: 24, fontSize: 15 }}>
         选择一种审查能力，了解它的检测维度和实现原理，然后选择项目和触发方式开始审查。
       </Typography.Paragraph>
+
+      {/* 学习/演示引导：双层架构观察 */}
+      <Card size="small" style={{ marginBottom: 16, background: '#f6ffed', borderColor: '#b7eb8f' }}>
+        <Space direction="vertical" size={2}>
+          <Typography.Text strong>🎓 学习观察（真实执行，非模拟）：</Typography.Text>
+          <Typography.Text type="secondary" style={{ fontSize: 13 }}>
+            选择<strong>单个 Agent</strong>（安全/规范/依赖等）触发，即为<strong>快速演示模式</strong>——用真实 LLM + 真实工具完整跑通
+            「外层 Flow（解析 → 并行 Crew → 聚合 → 报告）+ 内层 Crew（Agent 自主调用工具）」双层架构，实时观察每个节点流转。
+            选择「综合审查」则 6 个 Crew 并行执行，观察完整双层编排。
+          </Typography.Text>
+        </Space>
+      </Card>
 
       {/* 顶部选项卡 */}
       <Card size="small" style={{ marginBottom: 16 }}>

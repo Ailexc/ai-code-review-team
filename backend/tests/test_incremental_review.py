@@ -1,7 +1,9 @@
 """增量审查（Git diff）集成测试"""
 
 import pytest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
+
+from helpers import FakeCrew, FakeLLMConfig
 
 
 def _sample_project():
@@ -30,14 +32,14 @@ async def test_run_incremental_with_changes(client):
         "total_added_lines": 10,
     })()
 
-    class FakeAgent:
-        async def analyze(self, project_path, file_paths=None):
-            # 验证传入的 file_paths 是变更文件列表
-            assert file_paths == ["app/main.py", "app/utils.py"]
-            return [{"rule_id": "INC-1", "severity": "warning", "message": "变更引入问题", "file_path": "app/main.py", "line_start": 12}]
+    def fake_build(agent_name, project_path, file_paths, llm):
+        # 验证传入的 file_paths 是变更文件列表
+        assert file_paths == ["app/main.py", "app/utils.py"]
+        return FakeCrew([{"rule_id": "INC-1", "severity": "warning", "message": "变更引入问题", "file_path": "app/main.py", "line_start": 12}])
 
     with patch("app.services.diff_parser.get_changed_files", lambda *a, **k: fake_diff), \
-         patch.dict("app.services.review_service.AGENT_REGISTRY", {"security": (FakeAgent, "security", "security")}):
+         patch("app.flows.review_flow.build_review_crew", side_effect=fake_build), \
+         patch("app.flows.review_flow.get_active_llm_config", new=AsyncMock(return_value=FakeLLMConfig())):
         resp = await client.post(
             "/api/v1/reviews/run-incremental",
             params={"project_id": project_id, "review_type": "security"},

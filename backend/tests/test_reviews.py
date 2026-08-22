@@ -1,7 +1,9 @@
-"""审查流程 API 集成测试（Agent 分析通过 mock，避免真实 semgrep/LLM 调用）"""
+"""审查流程 API 集成测试（CrewAI 编排层通过 mock，避免真实 LLM/工具调用）"""
 
 import pytest
 from unittest.mock import patch
+
+from helpers import patch_review_flow
 
 
 def _sample_project():
@@ -65,31 +67,15 @@ STYLE_FINDINGS = [
 ]
 
 
-class FakeSecurityAgent:
-    async def analyze(self, project_path, file_paths=None):
-        return SECURITY_FINDINGS
-
-
-class FakeStyleAgent:
-    async def analyze(self, project_path, file_paths=None):
-        return STYLE_FINDINGS
-
-
 def _patch_security():
-    return patch.dict(
-        "app.services.review_service.AGENT_REGISTRY",
-        {"security": (FakeSecurityAgent, "security", "security")},
-    )
+    return patch_review_flow({"security": SECURITY_FINDINGS})
 
 
 def _patch_all():
-    return patch.dict(
-        "app.services.review_service.AGENT_REGISTRY",
-        {
-            "security": (FakeSecurityAgent, "security", "security"),
-            "code_style": (FakeStyleAgent, "code_style", "code_style"),
-        },
-    )
+    return patch_review_flow({
+        "security": SECURITY_FINDINGS,
+        "code_style": STYLE_FINDINGS,
+    })
 
 
 @pytest.mark.asyncio
@@ -169,14 +155,7 @@ async def test_run_full_review_runs_both_agents(client):
 async def test_run_dependency_review(client):
     project_id = await _create_project(client)
 
-    class FakeDepAgent:
-        async def analyze(self, project_path, file_paths=None):
-            return [{"rule_id": "DEP-1", "severity": "warning", "message": "requests 过时", "file_path": "requirements.txt", "line_start": 1}]
-
-    with patch.dict(
-        "app.services.review_service.AGENT_REGISTRY",
-        {"dependency": (FakeDepAgent, "dependency", "dependency")},
-    ):
+    with patch_review_flow({"dependency": [{"rule_id": "DEP-1", "severity": "warning", "message": "requests 过时", "file_path": "requirements.txt", "line_start": 1}]}):
         resp = await client.post(
             "/api/v1/reviews/run",
             params={"project_id": project_id, "review_type": "dependency"},
@@ -191,14 +170,7 @@ async def test_run_dependency_review(client):
 async def test_run_test_coverage_review(client):
     project_id = await _create_project(client)
 
-    class FakeCovAgent:
-        async def analyze(self, project_path, file_paths=None):
-            return [{"rule_id": "TEST-1", "severity": "suggestion", "message": "函数未测试", "file_path": "app.py", "line_start": 5}]
-
-    with patch.dict(
-        "app.services.review_service.AGENT_REGISTRY",
-        {"test_coverage": (FakeCovAgent, "test_coverage", "test_coverage")},
-    ):
+    with patch_review_flow({"test_coverage": [{"rule_id": "TEST-1", "severity": "suggestion", "message": "函数未测试", "file_path": "app.py", "line_start": 5}]}):
         resp = await client.post(
             "/api/v1/reviews/run",
             params={"project_id": project_id, "review_type": "test_coverage"},

@@ -46,7 +46,7 @@ cd frontend && npm install && npm run dev
 ## 测试
 
 ```bash
-# 后端集成测试（72 个，容器内运行）
+# 后端集成测试（140 个，容器内运行）
 docker exec -w /app aicodereviewteam-backend-1 python -m pytest tests/ -v
 
 # 或本地
@@ -90,7 +90,7 @@ AICodeReviewTeam/
 │   │   ├── api/v1/        # REST + WebSocket 端点
 │   │   ├── triggers/      # 触发器（目录/粘贴/上传/CLI）
 │   │   └── models/        # 数据模型
-│   └── tests/            # 72 个集成测试
+│   └── tests/            # 140 个集成测试
 ├── frontend/
 │   └── src/              # 仪表盘/项目/审查/设置/进度组件
 ├── plans/                # 架构与开发规划

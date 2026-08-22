@@ -1,46 +1,43 @@
-"""ReviewFlow — CrewAI Flows 双层编排骨架
+"""ReviewFlow — CrewAI Flows 外层编排（生产主路径，路线焊死）
 
-设计理念（与 docs/agent-learning-notes.md 一致）：
-- 外层 Flow：确定性、白盒、可调试。用 @start / @listen 装饰器编排
-  parse → dispatch → run → aggregate → report 的固定流程，状态用 Pydantic model 管理。
-- 内层 Agent：复用已测试的 SecurityAgent / CodeStyleAgent（各自封装 LLM 调用），
-  保持稳定的 LLM 接入，避免 CrewAI LLM 配置的脆弱性。
+Flows + Crews 双层架构：
+- 外层 Flow：@start / @listen 确定性编排 parse → 并行 Crew → aggregate → report，
+  状态用 ReviewState（Pydantic）管理，白盒可调试；
+- 内层 Crew：crew_factory.build_review_crew() 为每个专业 Agent 构建独立 Crew，
+  并行由 Flow 的「多 @listen 节点」机制提供（非 asyncio.gather）。
 
-本 Flow 是可选的编排路径，生产路径仍是 ReviewService（直接编排）。
-二者共享同一套 Agent 与共享 LLM 客户端，保证行为一致。
+进度事件（flow_node_started/completed、agent_started/completed/failed）经
+progress_emitter 推送，前端据此绘制「外层 Flow 节点 + 内层 Crew」双层视图。
+
+本文件不存在任何降级路径：CrewAI 是唯一编排方式。
 """
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from typing import Any
 
 import structlog
+from crewai.flow.flow import Flow, and_, listen, start
 from pydantic import BaseModel, Field
 
-from app.agents.security_agent import SecurityAgent
-from app.agents.code_style_agent import CodeStyleAgent
+from app.agents.llm_client import get_active_llm_config
+from app.flows.crew_factory import AGENT_PROFILES, build_crew_llm, build_review_crew, parse_crew_findings
+from app.services.metrics import metrics
+from app.services.progress import progress_emitter
 
 logger = structlog.get_logger()
 
-# 尽量延迟导入 CrewAI，避免在不使用 Flow 时引入重型依赖
-try:
-    from crewai.flow.flow import Flow, listen, start
-    _CREWAI_AVAILABLE = True
-except Exception as e:  # pragma: no cover - 仅在依赖缺失时触发
-    logger.warning("CrewAI 不可用，ReviewFlow 将以降级模式运行", error=str(e))
-    _CREWAI_AVAILABLE = False
-    Flow = object  # type: ignore
-
-    def start(*a, **k):  # type: ignore
-        def deco(fn):
-            return fn
-        return deco
-
-    def listen(*a, **k):  # type: ignore
-        def deco(fn):
-            return fn
-        return deco
+# review_type 片段 → agent_name（与 AGENT_PROFILES 对齐）
+AGENT_REGISTRY: dict[str, str] = {
+    "security": "security",
+    "code_style": "code_style",
+    "dependency": "dependency",
+    "test_coverage": "test_coverage",
+    "performance": "performance",
+    "git_review": "git_review",
+}
 
 
 class ReviewState(BaseModel):
@@ -50,6 +47,7 @@ class ReviewState(BaseModel):
     project_name: str = "Unknown"
     file_paths: list[str] | None = None
     review_type: str = "full"
+    review_id: str = ""
 
     # 各 Agent 的产出
     findings_by_agent: dict[str, list[dict[str, Any]]] = Field(default_factory=dict)
@@ -57,78 +55,140 @@ class ReviewState(BaseModel):
     summary: str = ""
 
 
-# review_type → (Agent 类, agent_name, category)
-_AGENT_MAP = {
-    "security": (SecurityAgent, "security", "security"),
-    "code_style": (CodeStyleAgent, "code_style", "code_style"),
-}
-
-
-def _resolve_agents(review_type: str) -> list[tuple[type, str, str]]:
+def _resolve_agents(review_type: str) -> list[str]:
+    """根据审查类型解析参与的 Agent 列表"""
     if review_type == "full":
-        return list(_AGENT_MAP.values())
-    if review_type in _AGENT_MAP:
-        return [_AGENT_MAP[review_type]]
-    return [_AGENT_MAP["security"]]
+        return list(AGENT_REGISTRY.keys())
+    if review_type in AGENT_REGISTRY:
+        return [review_type]
+    logger.warning("未知审查类型，回退到 security", review_type=review_type)
+    return ["security"]
 
 
 class ReviewFlow(Flow[ReviewState]):
-    """代码审查编排 Flow
+    """代码审查编排 Flow（生产主路径）
 
     用法:
         flow = ReviewFlow()
         result = await flow.kickoff_async(ReviewState(project_path=..., review_type="full"))
     """
 
-    @start()
-    def parse_project(self) -> None:
-        """节点1：校验项目路径"""
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._llm = None
+
+    # ---------- 辅助 ----------
+
+    async def _get_llm(self):
+        """获取 CrewAI LLM（复用项目 LLM 配置，实例级缓存）"""
+        if self._llm is None:
+            config = await get_active_llm_config()
+            if not config:
+                raise RuntimeError(
+                    "未配置启用的 LLM 模型。请先在「设置 → 模型配置」中添加并启用模型，再发起审查。"
+                )
+            self._llm = build_crew_llm(config)
+        return self._llm
+
+    async def _emit(self, event: str, data: dict[str, Any]):
+        """发布进度事件（无 review_id 时跳过，便于单元测试）"""
+        if self.state.review_id:
+            await progress_emitter.emit(self.state.review_id, event, data)
+
+    async def _run_crew_node(self, agent_name: str):
+        """内层 Crew 执行：构建独立 Crew 并 kickoff（上下文隔离）
+
+        单个 Crew 失败不中断整体（记 agent_failed + 空结果），
+        聚合节点继续处理其余 Agent 的结果。
+        """
         state = self.state
+        if agent_name not in _resolve_agents(state.review_type):
+            logger.info("ReviewFlow: 跳过 Agent", agent=agent_name, type=state.review_type)
+            return
+
+        profile = AGENT_PROFILES.get(agent_name, {})
+        await self._emit("agent_started", {
+            "agent": agent_name,
+            "role": profile.get("role", ""),
+            "goal": profile.get("goal", ""),
+            "tool": f"{agent_name}_review_scan",
+        })
+        agent_start = time.monotonic()
+        try:
+            llm = await self._get_llm()
+            crew = build_review_crew(agent_name, state.project_path, state.file_paths, llm)
+            result = await crew.kickoff_async()
+            findings = parse_crew_findings(result)
+            state.findings_by_agent[agent_name] = findings
+            metrics.record_agent_run(agent_name, True, time.monotonic() - agent_start, len(findings))
+            await self._emit("agent_completed", {"agent": agent_name, "findings": len(findings)})
+            logger.info("ReviewFlow: Crew 完成", agent=agent_name, findings=len(findings))
+        except Exception as e:
+            metrics.record_agent_run(agent_name, False, time.monotonic() - agent_start, 0)
+            logger.error("ReviewFlow: Crew 执行失败", agent=agent_name, error=str(e))
+            state.findings_by_agent[agent_name] = []
+            await self._emit("agent_failed", {"agent": agent_name, "error": str(e)})
+
+    # ---------- 节点 1：解析 ----------
+
+    @start()
+    async def parse_project(self) -> None:
+        """节点1：校验项目路径 + 预检 LLM 配置"""
+        state = self.state
+        await self._emit("flow_node_started", {"node": "parse_project", "label": "解析项目"})
+
         path = Path(state.project_path)
         if not path.exists():
             logger.warning("ReviewFlow: 项目路径不存在", path=state.project_path)
+        # 预检 LLM：无配置提前失败，避免各 Crew 节点重复报错
+        try:
+            await self._get_llm()
+        except RuntimeError:
+            raise
         logger.info("ReviewFlow: 解析项目", path=state.project_path, type=state.review_type)
+        await self._emit("flow_node_completed", {"node": "parse_project", "label": "解析项目"})
+
+    # ---------- 节点 2：6 个内层 Crew 并行（Flow 多 @listen 机制）----------
 
     @listen(parse_project)
-    def dispatch_agents(self) -> None:
-        """节点2：根据审查类型决定运行哪些 Agent"""
-        agents = _resolve_agents(self.state.review_type)
-        logger.info(
-            "ReviewFlow: 分派 Agent",
-            agents=[name for _, name, _ in agents],
-        )
+    async def run_security_crew(self) -> None:
+        await self._run_crew_node("security")
 
-    @listen(dispatch_agents)
-    async def run_agents(self) -> None:
-        """节点3：并行运行各 Agent 并聚合结果
+    @listen(parse_project)
+    async def run_code_style_crew(self) -> None:
+        await self._run_crew_node("code_style")
 
-        内层：复用 SecurityAgent / CodeStyleAgent，它们各自封装 LLM 调用。
-        """
-        import asyncio
+    @listen(parse_project)
+    async def run_dependency_crew(self) -> None:
+        await self._run_crew_node("dependency")
 
+    @listen(parse_project)
+    async def run_test_coverage_crew(self) -> None:
+        await self._run_crew_node("test_coverage")
+
+    @listen(parse_project)
+    async def run_performance_crew(self) -> None:
+        await self._run_crew_node("performance")
+
+    @listen(parse_project)
+    async def run_git_review_crew(self) -> None:
+        await self._run_crew_node("git_review")
+
+    # ---------- 节点 3：聚合（等所有 Crew 完成）----------
+
+    @listen(and_(
+        run_security_crew,
+        run_code_style_crew,
+        run_dependency_crew,
+        run_test_coverage_crew,
+        run_performance_crew,
+        run_git_review_crew,
+    ))
+    async def aggregate(self) -> None:
+        """节点3：去重统计 + 生成摘要"""
         state = self.state
-        agents = _resolve_agents(state.review_type)
-        path = Path(state.project_path)
+        await self._emit("flow_node_started", {"node": "aggregate", "label": "聚合结果"})
 
-        async def _run_one(agent_cls, agent_name: str):
-            agent = agent_cls()
-            findings = await agent.analyze(
-                project_path=state.project_path,
-                file_paths=state.file_paths,
-            )
-            return agent_name, findings
-
-        results = await asyncio.gather(
-            *[_run_one(cls, name) for cls, name, _ in agents]
-        )
-
-        for agent_name, findings in results:
-            state.findings_by_agent[agent_name] = findings
-
-    @listen(run_agents)
-    def aggregate(self) -> None:
-        """节点4：聚合去重 + 统计"""
-        state = self.state
         seen: set[tuple] = set()
         all_findings: list[dict[str, Any]] = []
         for findings in state.findings_by_agent.values():
@@ -145,12 +205,20 @@ class ReviewFlow(Flow[ReviewState]):
             if count:
                 parts.append(f"{label} {count} 个{ {'critical':'严重','warning':'警告','suggestion':'建议','nitpick':'细节'}[sev] }")
         state.summary = "✅ 未发现问题" if not parts else f"发现 {state.total_findings} 个问题：" + "，".join(parts)
+
         logger.info("ReviewFlow: 聚合完成", total=state.total_findings)
+        await self._emit("flow_node_completed", {
+            "node": "aggregate", "label": "聚合结果", "total": state.total_findings,
+        })
+
+    # ---------- 节点 4：完成 ----------
 
     @listen(aggregate)
-    def generate_report(self) -> ReviewState:
-        """节点5：完成（报告生成在 API 层按需调用 ReportGenerator）"""
+    async def generate_report(self) -> ReviewState:
+        """节点4：完成（报告生成在 API 层按需调用 ReportGenerator）"""
+        await self._emit("flow_node_started", {"node": "generate_report", "label": "生成摘要"})
         logger.info("ReviewFlow: 编排完成", summary=self.state.summary)
+        await self._emit("flow_node_completed", {"node": "generate_report", "label": "生成摘要"})
         return self.state
 
 
@@ -159,27 +227,25 @@ async def run_review_flow(
     review_type: str = "full",
     file_paths: list[str] | None = None,
     project_name: str = "Unknown",
+    review_id: str = "",
 ) -> ReviewState:
-    """便捷入口：运行 ReviewFlow 并返回最终状态"""
-    if not _CREWAI_AVAILABLE:
-        raise RuntimeError("CrewAI 不可用，无法运行 ReviewFlow")
-
+    """便捷入口：运行 ReviewFlow 并返回最终状态（生产主路径）"""
     flow = ReviewFlow()
-    # CrewAI Flow 的 kickoff 接收 dict（而非 Pydantic 实例），内部构造状态
     inputs = {
         "project_path": project_path,
-        "review_type": review_type,
-        "file_paths": file_paths,
         "project_name": project_name,
+        "file_paths": file_paths,
+        "review_type": review_type,
+        "review_id": review_id,
     }
     result = await flow.kickoff_async(inputs)
     # kickoff 返回 StateWithId 包装对象，其属性代理到底层 state
-    # 重新构造为 ReviewState 以获得稳定类型
     return ReviewState(
         project_path=getattr(result, "project_path", project_path),
-        review_type=getattr(result, "review_type", review_type),
-        file_paths=getattr(result, "file_paths", file_paths),
         project_name=getattr(result, "project_name", project_name),
+        file_paths=getattr(result, "file_paths", file_paths),
+        review_type=getattr(result, "review_type", review_type),
+        review_id=getattr(result, "review_id", review_id),
         findings_by_agent=dict(getattr(result, "findings_by_agent", {}) or {}),
         total_findings=getattr(result, "total_findings", 0),
         summary=getattr(result, "summary", ""),

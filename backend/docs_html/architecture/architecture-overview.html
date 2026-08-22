@@ -33,7 +33,7 @@
 
 <h3>前置知识</h3>
 <ul>
-<li><strong>Python 异步编程</strong>：asyncio、async/await、asyncio.gather 并发模式</li>
+<li><strong>Python 异步编程</strong>：asyncio、async/await 基础（作为 Python 并发基础，编排本身由 CrewAI Flow 承担）</li>
 <li><strong>FastAPI 基础</strong>：路由、依赖注入、Pydantic 模型、中间件</li>
 <li><strong>SQLAlchemy 2.0</strong>：Mapped 类型注解、异步 Session（AsyncSession）</li>
 <li><strong>React + TypeScript</strong>：Hooks、React Router、Ant Design 组件</li>
@@ -58,7 +58,7 @@
 
 <h3>你将学到什么</h3>
 <ul>
-<li>如何设计一个<strong>多 Agent 并行编排</strong>系统：asyncio.gather 并发、结果聚合、容错降级</li>
+<li>如何设计一个<strong>多 Agent 编排</strong>系统：CrewAI Flows + Crews 双层架构（外层 Flow 确定性编排 + 内层 Crew 自主协作）</li>
 <li>如何实践<strong>"确定性工具兜底 + LLM 语义补充"</strong>的混合架构：工具保证覆盖率，LLM 补充深度</li>
 <li>如何用 AST 静态分析实现<strong>代码性能反模式检测</strong>（N+1 查询、同步阻塞、字符串拼接）</li>
 <li>如何构建<strong>代码库上下文引擎</strong>，为 LLM 分析注入项目级上下文以提升审查质量</li>
@@ -74,8 +74,8 @@
 <p>每个 Agent 都采用"确定性工具先扫描 → LLM 语义补充"的模式。Semgrep/Ruff/pip-audit/AST 确保基础检测不漏（零漏报），LLM 补充语义理解和修复建议（深度分析）。即使 LLM 不可用，系统仍能正常输出基础审查结果。</p>
 </div>
 <div class="highlight-card">
-<h4>6 Agent 并行编排</h4>
-<p>ReviewService 通过 <code>asyncio.gather()</code> 并发执行所有 Agent，而非串行等待。每个 Agent 独立运行、独立容错，单个 Agent 失败不影响其他 Agent。结果统一聚合、去重、入库。</p>
+<h4>6 Agent 编排（CrewAI Flows + Crews 双层架构）</h4>
+<p>生产主路径采用 <strong>CrewAI Flows + Crews 双层架构</strong>：外层 <code>ReviewFlow</code> 用 <code>@start/@listen</code> 装饰器做确定性编排（解析 → 并行分派 → 聚合 → 报告），状态用 Pydantic 管理；内层每个专业 Agent 是独立 <code>Crew</code>（Agent + Task + 工具），自主调用工具完成审查。并行由 Flow 的「多 @listen 节点」机制提供，单个 Crew 失败不阻塞整体（记 agent_failed，聚合继续）。</p>
 </div>
 <div class="highlight-card">
 <h4>AST 深度分析</h4>
@@ -184,13 +184,13 @@
 <tbody>
 <tr>
 <td><strong>确定性工具兜底 + LLM 语义补充</strong></td>
-<td>Semgrep/Ruff/pip-audit/AST 确保基础检测不漏（零漏报），LLM 补充语义理解和修复建议。LLM 失败时自动降级到纯工具结果。</td>
+<td>Semgrep/Ruff/pip-audit/AST 确保基础检测不漏（零漏报），LLM 补充语义理解和修复建议。LLM 分析失败时该部分返回空，确定性工具结果保留。</td>
 <td>每个 Agent 的 <code>analyze()</code> 方法都先调用确定性工具，再 try/except 调用 LLM。参见 <code>app/agents/security_agent.py</code></td>
 </tr>
 <tr>
-<td><strong>6 Agent 并行编排</strong></td>
-<td>asyncio.gather 并行执行所有 Agent，结果去重聚合，最小化审查时间。单个 Agent 异常不阻塞整体。</td>
-<td><code>ReviewService.run_review()</code> 中的 <code>asyncio.gather(*[_run_one(...)])</code>。参见 <code>app/services/review_service.py</code></td>
+<td><strong>6 Agent 编排（CrewAI Flows + Crews 双层）</strong></td>
+<td>外层 Flow 确定性编排（解析 → 并行 Crew → 聚合 → 报告），内层 6 个 Crew 各自独立上下文自主审查，并行由 Flow 多 @listen 机制提供。单个 Crew 失败不阻塞整体。</td>
+<td><code>ReviewFlow</code>（<code>@start/@listen</code>）+ <code>build_review_crew()</code>（Agent/Task/Crew/工具）。参见 <code>app/flows/review_flow.py</code>、<code>app/flows/crew_factory.py</code></td>
 </tr>
 <tr>
 <td><strong>可验证维度分离</strong></td>
@@ -198,9 +198,9 @@
 <td>每个 Agent 继承 <code>BaseAgent</code>，实现独立的 <code>analyze()</code>。参见 <code>app/agents/base.py</code></td>
 </tr>
 <tr>
-<td><strong>优雅降级</strong></td>
-<td>LLM 不可用时系统仍能正常工作（纯工具模式）；单个 Agent 失败时其他 Agent 不受影响。</td>
-<td>所有 LLM 调用都包裹在 try/except 中，失败时 logger.warning 并返回空列表。</td>
+<td><strong>编排容错</strong></td>
+<td>外层 Flow 中单个 Crew 失败不阻塞整体：记 agent_failed 事件，聚合节点继续处理其余 Agent 的结果；审查级错误（如未配置 LLM）给出明确引导。</td>
+<td>Crew 执行包裹 try/except（<code>app/flows/review_flow.py</code> 的 <code>_run_crew_node</code>）。</td>
 </tr>
 <tr>
 <td><strong>实时可观测</strong></td>
@@ -856,7 +856,7 @@ def compute_health_score(review: Review, findings: list[Finding]) -&gt; float:
 <li><strong>并发控制</strong>：Semaphore(3) 限制同时 LLM 调用数，避免 API 限流</li>
 <li><strong>JSON 容错解析</strong>：<code>parse_json_object()</code> 从 LLM 回复中提取 <code>{...}</code> 区间，容忍 markdown 代码围栏等噪音</li>
 <li><strong>Token 用量持久化</strong>：每次调用都记录到 <code>LLMUsage</code> 表（prompt_tokens / completion_tokens / latency_ms），重启不丢失</li>
-<li><strong>优雅降级</strong>：LLM 不可用时，Agent 回退到纯工具结果，不阻塞审查流程</li>
+<li><strong>LLM 容错</strong>：LLM 调用失败时该次分析返回空（记 warning），确定性工具结果不受影响，审查流程继续</li>
 </ul>
 
 <!-- ============================================================ -->
@@ -884,7 +884,7 @@ def compute_health_score(review: Review, findings: list[Finding]) -&gt; float:
 # [原始 Agent Prompt]
 # 你是一个代码安全专家。请分析以下代码...</code></pre>
 
-<p><strong>降级策略</strong>：若 ContextEngine 构建失败（如项目过大、解析错误），自动降级为无上下文模式，直接使用原始 Prompt。</p>
+<p><strong>兜底策略</strong>：若 ContextEngine 构建失败（如项目过大、解析错误），则跳过上下文注入，直接使用原始 Prompt（不影响审查主流程）。</p>
 
 <!-- ============================================================ -->
 <!-- 13. 指标收集与审计日志                                           -->
