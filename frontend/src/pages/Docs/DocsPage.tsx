@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Card, Spin, Typography, Empty, Row, Col, Tag, Input, Button, Affix } from 'antd';
+import { Card, Spin, Typography, Empty, Row, Col, Tag, Input, Button } from 'antd';
 import { BookOutlined, SearchOutlined, ArrowLeftOutlined } from '@ant-design/icons';
 import { useSearchParams } from 'react-router-dom';
 import api from '@/api/index';
@@ -91,7 +91,14 @@ export default function DocsPage() {
 
   // 监听滚动，高亮当前目录项
   useEffect(() => {
-    if (!selectedDoc) return;
+    if (!selectedDoc || !contentRef.current) return;
+    // 找到实际的滚动容器（最近的 overflow:auto/scroll 祖先）
+    let scrollContainer: Element | null = contentRef.current.parentElement;
+    while (scrollContainer && getComputedStyle(scrollContainer).overflow !== 'auto' && getComputedStyle(scrollContainer).overflow !== 'scroll') {
+      scrollContainer = scrollContainer.parentElement;
+    }
+    const target = scrollContainer || document;
+
     const handleScroll = () => {
       const headings = contentRef.current?.querySelectorAll('[id]');
       if (!headings) return;
@@ -106,14 +113,24 @@ export default function DocsPage() {
         setActiveTocId(currentId);
       }
     };
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
+    target.addEventListener('scroll', handleScroll, { passive: true });
+    return () => target.removeEventListener('scroll', handleScroll);
   }, [selectedDoc, activeTocId]);
 
   // 点击目录跳转
   const handleTocClick = (id: string) => {
     const element = contentRef.current?.querySelector(`#${CSS.escape(id)}`);
-    if (element) {
+    if (!element) return;
+    // 找到滚动容器
+    let scrollContainer: Element | null = contentRef.current?.parentElement || null;
+    while (scrollContainer && getComputedStyle(scrollContainer).overflow !== 'auto' && getComputedStyle(scrollContainer).overflow !== 'scroll') {
+      scrollContainer = scrollContainer.parentElement;
+    }
+    if (scrollContainer) {
+      const containerRect = scrollContainer.getBoundingClientRect();
+      const elemRect = element.getBoundingClientRect();
+      scrollContainer.scrollTo({ top: scrollContainer.scrollTop + elemRect.top - containerRect.top - 80, behavior: 'smooth' });
+    } else {
       const top = element.getBoundingClientRect().top + window.scrollY - 100;
       window.scrollTo({ top, behavior: 'smooth' });
     }
@@ -148,11 +165,10 @@ export default function DocsPage() {
       <div style={{ display: 'flex', gap: 24 }}>
         {/* 左侧目录 */}
         {toc.length > 0 && (
-          <Affix offsetTop={80} style={{ alignSelf: 'flex-start' }}>
+          <div style={{ width: 200, flexShrink: 0, position: 'sticky', top: 0, alignSelf: 'flex-start' }}>
             <Card
               size="small"
               title="📑 目录"
-              style={{ width: 200, flexShrink: 0 }}
               styles={{ body: { padding: '8px 12px' } }}
             >
               <div ref={tocRef}>
@@ -177,7 +193,7 @@ export default function DocsPage() {
                 ))}
               </div>
             </Card>
-          </Affix>
+          </div>
         )}
 
         {/* 右侧内容 */}
