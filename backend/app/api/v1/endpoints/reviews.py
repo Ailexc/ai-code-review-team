@@ -13,7 +13,9 @@ from app.core.database import get_db
 from app.models.review import Review
 from app.models.finding import Finding
 from app.models.project import Project
+from app.models.review_step import ReviewStep
 from app.schemas.review import ReviewCreate, ReviewResponse
+from app.schemas.review_step import ReviewStepResponse
 from app.services.review_service import ReviewService
 from app.services.report_generator import ReportGenerator
 
@@ -217,6 +219,22 @@ async def get_review(
     if not review:
         raise HTTPException(status_code=404, detail="审查不存在")
     return ReviewResponse.model_validate(review)
+
+
+@router.get("/{review_id}/steps", response_model=list[ReviewStepResponse])
+async def get_review_steps(
+    review_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """获取审查执行步骤时间线（可观测性：每一步做了什么 / 耗时 / 跳过或异常）"""
+    result = await db.execute(
+        select(ReviewStep)
+        .where(ReviewStep.review_id == review_id)
+        # 并行步骤 sequence 可能重复，用 created_at 兜底保证时间线稳定
+        .order_by(ReviewStep.sequence, ReviewStep.created_at)
+    )
+    steps = result.scalars().all()
+    return [ReviewStepResponse.model_validate(s) for s in steps]
 
 
 @router.get("/{review_id}/report", response_class=PlainTextResponse)

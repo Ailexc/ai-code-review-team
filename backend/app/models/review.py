@@ -6,6 +6,7 @@ from sqlalchemy import String, Text, Integer, DateTime, Float, ForeignKey, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.models.review_step import ReviewStep
 
 
 class Review(Base):
@@ -40,6 +41,9 @@ class Review(Base):
     # 关系
     project: Mapped["Project"] = relationship(back_populates="reviews")
     findings: Mapped[list["Finding"]] = relationship(back_populates="review", cascade="all, delete-orphan")
+    steps: Mapped[list["ReviewStep"]] = relationship(
+        back_populates="review", cascade="all, delete-orphan", order_by="ReviewStep.sequence"
+    )
 
     def __repr__(self):
         return f"<Review(id={self.id}, status={self.status})>"

@@ -75,10 +75,12 @@ class ReviewService:
                 )
                 self.db.add(review)
                 await self.db.flush()
+                await self.db.commit()  # 尽早提交，释放 SQLite 写锁（审查期间供 review_steps 等独立 session 写入）
             else:
                 review.status = "running"
                 review.started_at = datetime.now(timezone.utc)
                 await self.db.flush()
+                await self.db.commit()
         else:
             review = Review(
                 project_id=project.id,
@@ -89,6 +91,7 @@ class ReviewService:
             )
             self.db.add(review)
             await self.db.flush()
+            await self.db.commit()  # 尽早提交，释放 SQLite 写锁
         logger.info("开始审查", review_id=review.id, project=project.name, type=review_type)
         await progress_emitter.emit(review.id, "review_started", {
             "review_type": review_type, "project": project.name,

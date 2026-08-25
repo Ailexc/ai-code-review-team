@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Card, Tag, Button, message, Spin, Space, List, Typography, Alert, Descriptions, Dropdown, Modal } from 'antd';
+import { Card, Tag, Button, message, Spin, Space, List, Typography, Alert, Descriptions, Dropdown, Modal, Timeline } from 'antd';
 import {
   ArrowLeftOutlined, ExclamationCircleOutlined, WarningOutlined, InfoCircleOutlined,
   DownloadOutlined, EyeOutlined, MoreOutlined, CheckCircleOutlined, UndoOutlined,
-  ThunderboltOutlined,
+  ThunderboltOutlined, MinusCircleOutlined, LoadingOutlined,
 } from '@ant-design/icons';
 import api from '@/api/index';
 import dayjs from 'dayjs';
@@ -40,11 +40,39 @@ interface Review {
   duration_seconds: number | null;
 }
 
+// 审查执行步骤（可观测性）
+interface ReviewStep {
+  id: string;
+  review_id: string;
+  sequence: number;
+  phase: string;
+  node_type: string;
+  agent_name: string | null;
+  status: string;
+  action_text: string | null;
+  input_summary: string | null;
+  output_summary: string | null;
+  started_at: string | null;
+  ended_at: string | null;
+  duration_ms: number | null;
+  detail: Record<string, unknown> | null;
+}
+
+const AGENT_LABELS: Record<string, string> = {
+  security: '安全审查',
+  code_style: '代码规范',
+  dependency: '依赖审查',
+  test_coverage: '测试覆盖',
+  performance: '性能分析',
+  git_review: 'Git 审查',
+};
+
 export default function ReviewDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [review, setReview] = useState<Review | null>(null);
   const [findings, setFindings] = useState<Finding[]>([]);
+  const [steps, setSteps] = useState<ReviewStep[]>([]);
   const [loading, setLoading] = useState(true);
   const [autofixOpen, setAutofixOpen] = useState(false);
   const [autofixResult, setAutofixResult] = useState<Record<string, unknown> | null>(null);
@@ -56,10 +84,12 @@ export default function ReviewDetail() {
     Promise.all([
       api.get(`/reviews/${id}`),
       api.get(`/findings?review_id=${id}`),
+      api.get(`/reviews/${id}/steps`),
     ])
-      .then(([reviewData, findingsData]) => {
+      .then(([reviewData, findingsData, stepsData]) => {
         setReview(reviewData as unknown as Review);
         setFindings(findingsData as unknown as Finding[]);
+        setSteps(stepsData as unknown as ReviewStep[]);
       })
       .catch(() => message.error('获取审查详情失败'))
       .finally(() => setLoading(false));
@@ -125,6 +155,35 @@ export default function ReviewDetail() {
     nitpick: 'default',
   };
 
+  // ---- 执行流程时间线辅助 ----
+  const stepIcon = (status: string) => {
+    if (status === 'completed') return <CheckCircleOutlined style={{ color: '#52c41a' }} />;
+    if (status === 'skipped') return <MinusCircleOutlined style={{ color: '#bfbfbf' }} />;
+    if (status === 'failed') return <ExclamationCircleOutlined style={{ color: '#ff4d4f' }} />;
+    return <LoadingOutlined />;
+  };
+
+  const stepTitle = (s: ReviewStep) => {
+    // 内层 Crew 节点：run_<agent>_crew
+    if (s.phase === 'inner_crew' && s.agent_name) {
+      return AGENT_LABELS[s.agent_name] || s.agent_name;
+    }
+    const labels: Record<string, string> = {
+      parse_project: '① 解析项目',
+      aggregate: '③ 聚合结果',
+      generate_report: '④ 生成摘要',
+      skip_agent: '跳过 Agent',
+    };
+    return labels[s.node_type] || s.node_type;
+  };
+
+  const stepStatusTag = (s: ReviewStep) => {
+    if (s.status === 'completed') return <Tag color="green">完成</Tag>;
+    if (s.status === 'skipped') return <Tag>跳过</Tag>;
+    if (s.status === 'failed') return <Tag color="red">失败</Tag>;
+    return <Tag color="processing">进行中</Tag>;
+  };
+
   return (
     <div>
       <Space style={{ marginBottom: 16 }}>
@@ -172,6 +231,49 @@ export default function ReviewDetail() {
           style={{ marginBottom: 24 }}
         />
       )}
+
+      <Card
+        title="⚙️ 执行流程（外层 Flow + 内层 Crew，每一步做了什么）"
+        style={{ marginBottom: 24 }}
+        extra={<Tag color="purple">可观测性</Tag>}
+      >
+        {steps.length === 0 ? (
+          <Typography.Text type="secondary">
+            暂无执行步骤记录（旧数据或步骤未持久化）。
+          </Typography.Text>
+        ) : (
+          <Timeline
+            items={steps.map((s) => ({
+              dot: stepIcon(s.status),
+              children: (
+                <div key={s.id} style={{ marginBottom: 4 }}>
+                  <Space style={{ marginBottom: 4 }} wrap>
+                    {s.phase === 'inner_crew' ? (
+                      <Tag color="purple">内层 Crew</Tag>
+                    ) : (
+                      <Tag color="blue">外层 Flow</Tag>
+                    )}
+                    <Typography.Text strong>{stepTitle(s)}</Typography.Text>
+                    {stepStatusTag(s)}
+                    {s.duration_ms != null && (
+                      <Typography.Text type="secondary">
+                        {(s.duration_ms / 1000).toFixed(1)}s
+                      </Typography.Text>
+                    )}
+                  </Space>
+                  <div style={{ marginBottom: 2 }}>{s.action_text}</div>
+                  {s.output_summary && (
+                    <div style={{ color: '#666', fontSize: 13 }}>📤 产出：{s.output_summary}</div>
+                  )}
+                  {s.input_summary && (
+                    <div style={{ color: '#999', fontSize: 12 }}>📥 输入：{s.input_summary}</div>
+                  )}
+                </div>
+              ),
+            }))}
+          />
+        )}
+      </Card>
 
       <Card title={`发现列表 (${findings.length})`}>
         <List

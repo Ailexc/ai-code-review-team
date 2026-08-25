@@ -112,6 +112,15 @@ DOCS_CATALOG = [
         "description": "Git diff 场景、PR 审查流程",
         "icon": "📊",
     },
+    # 工程实践
+    {
+        "id": "performance-and-observability",
+        "title": "审查性能优化 + 过程可观测性",
+        "category": "practices",
+        "category_label": "工程实践",
+        "description": "Semgrep 本地化 / 跳过收尾 LLM / 步骤持久化（完整复盘）",
+        "icon": "⚡",
+    },
 ]
 
 

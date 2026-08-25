@@ -158,13 +158,17 @@ def _make_scan_tool(
     保证工具调用环节可靠；Agent 负责决定调用并整理结果。
     """
 
-    @tool(f"{agent_name}_review_scan")
+    # result_as_answer=True：工具返回的 findings 已是确定的最终结果（schema 确定），
+    # 直接作为 Agent 最终答案，跳过 CrewAI 的收尾 LLM 重新格式化（大幅提速，实测验证）。
+    # 注意：必须返回 {"findings": [...]} 对象（而非顶层数组），否则 Task 的
+    # output_pydantic=FindingsOutput 校验会失败（CrewAI convert_to_model 按对象解析）。
+    @tool(f"{agent_name}_review_scan", result_as_answer=True)
     async def review_scan(path: str = "") -> str:
         """执行代码审查扫描，返回结构化 findings JSON（rule_id/severity/message/file_path/line_start/suggestion）。"""
         target = path or project_path
         agent = agent_cls()
         findings = await agent.analyze(project_path=target, file_paths=file_paths)
-        return json.dumps(findings, ensure_ascii=False)
+        return json.dumps({"findings": findings}, ensure_ascii=False)
 
     return review_scan
 
@@ -265,7 +269,9 @@ def parse_crew_findings(crew_result) -> list[dict[str, Any]]:
             end = raw.rfind("}") + 1
             if start >= 0 and end > start:
                 data = json.loads(raw[start:end])
-                for f in data.get("findings", []):
+                # 兼容两种格式：{"findings": [...]} 或顶层数组 [...]
+                items = data.get("findings", []) if isinstance(data, dict) else data
+                for f in items:
                     findings.append({
                         "rule_id": f.get("rule_id", ""),
                         "severity": f.get("severity", "warning"),

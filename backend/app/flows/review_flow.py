@@ -26,6 +26,7 @@ from app.agents.llm_client import get_active_llm_config
 from app.flows.crew_factory import AGENT_PROFILES, build_crew_llm, build_review_crew, parse_crew_findings
 from app.services.metrics import metrics
 from app.services.progress import progress_emitter
+from app.services.review_steps import review_step_recorder
 
 logger = structlog.get_logger()
 
@@ -100,16 +101,27 @@ class ReviewFlow(Flow[ReviewState]):
 
         单个 Crew 失败不中断整体（记 agent_failed + 空结果），
         聚合节点继续处理其余 Agent 的结果。
+        执行结果持久化到 review_steps（可观测性）。
         """
         state = self.state
-        if agent_name not in _resolve_agents(state.review_type):
+        resolved = _resolve_agents(state.review_type)
+        if agent_name not in resolved:
+            await review_step_recorder.record(
+                review_id=state.review_id, phase="outer_flow", node_type="skip_agent",
+                status="skipped", agent_name=agent_name,
+                action_text=(
+                    f"按审查类型「{state.review_type}」，跳过 Agent「{agent_name}」"
+                    f"（本次参与 Agent：{'、'.join(resolved)}）"
+                ),
+            )
             logger.info("ReviewFlow: 跳过 Agent", agent=agent_name, type=state.review_type)
             return
 
         profile = AGENT_PROFILES.get(agent_name, {})
+        role = profile.get("role", agent_name)
         await self._emit("agent_started", {
             "agent": agent_name,
-            "role": profile.get("role", ""),
+            "role": role,
             "goal": profile.get("goal", ""),
             "tool": f"{agent_name}_review_scan",
         })
@@ -120,14 +132,36 @@ class ReviewFlow(Flow[ReviewState]):
             result = await crew.kickoff_async()
             findings = parse_crew_findings(result)
             state.findings_by_agent[agent_name] = findings
+            duration_ms = int((time.monotonic() - agent_start) * 1000)
             metrics.record_agent_run(agent_name, True, time.monotonic() - agent_start, len(findings))
             await self._emit("agent_completed", {"agent": agent_name, "findings": len(findings)})
             logger.info("ReviewFlow: Crew 完成", agent=agent_name, findings=len(findings))
+            await review_step_recorder.record(
+                review_id=state.review_id, phase="inner_crew",
+                node_type=f"run_{agent_name}_crew", status="completed",
+                agent_name=agent_name,
+                action_text=(
+                    f"内层 Crew「{role}」执行：构建独立 Crew（Process.sequential），"
+                    f"Agent 自主调用 {agent_name}_review_scan 工具完成扫描，产出 {len(findings)} 条发现"
+                ),
+                input_summary=f"项目：{state.project_name}（{state.project_path}）",
+                output_summary=f"{len(findings)} 条发现",
+                duration_ms=duration_ms,
+                detail={"findings": len(findings), "tool": f"{agent_name}_review_scan", "role": role},
+            )
         except Exception as e:
             metrics.record_agent_run(agent_name, False, time.monotonic() - agent_start, 0)
             logger.error("ReviewFlow: Crew 执行失败", agent=agent_name, error=str(e))
             state.findings_by_agent[agent_name] = []
             await self._emit("agent_failed", {"agent": agent_name, "error": str(e)})
+            await review_step_recorder.record(
+                review_id=state.review_id, phase="inner_crew",
+                node_type=f"run_{agent_name}_crew", status="failed",
+                agent_name=agent_name,
+                action_text=f"内层 Crew「{role}」执行失败：{str(e)[:120]}",
+                duration_ms=int((time.monotonic() - agent_start) * 1000),
+                detail={"error": str(e), "role": role},
+            )
 
     # ---------- 节点 1：解析 ----------
 
@@ -136,17 +170,44 @@ class ReviewFlow(Flow[ReviewState]):
         """节点1：校验项目路径 + 预检 LLM 配置"""
         state = self.state
         await self._emit("flow_node_started", {"node": "parse_project", "label": "解析项目"})
-
-        path = Path(state.project_path)
-        if not path.exists():
-            logger.warning("ReviewFlow: 项目路径不存在", path=state.project_path)
-        # 预检 LLM：无配置提前失败，避免各 Crew 节点重复报错
+        start = time.monotonic()
+        action = "读取项目目录，校验路径并预检 LLM 配置"
+        detail: dict[str, Any] = {}
         try:
+            path = Path(state.project_path)
+            if path.exists():
+                try:
+                    files = [p for p in path.rglob("*") if p.is_file()]
+                    code_files = [
+                        f for f in files
+                        if f.suffix.lower() in {'.py', '.js', '.ts', '.jsx', '.tsx', '.go', '.java'}
+                    ]
+                    detail["total_files"] = len(files)
+                    detail["code_files"] = len(code_files)
+                    action += f"；扫描到 {len(files)} 个文件（代码 {len(code_files)}）"
+                except Exception:
+                    pass
+            else:
+                action += "；⚠️ 项目路径不存在"
+            agents = _resolve_agents(state.review_type)
+            detail["agents"] = agents
+            action += f"；按审查类型「{state.review_type}」确定参与 Agent：{'、'.join(agents)}"
             await self._get_llm()
-        except RuntimeError:
-            raise
+            status = "completed"
+        except Exception as e:
+            status = "failed"
+            action += f"；失败：{str(e)[:100]}"
+            detail["error"] = str(e)
         logger.info("ReviewFlow: 解析项目", path=state.project_path, type=state.review_type)
         await self._emit("flow_node_completed", {"node": "parse_project", "label": "解析项目"})
+        await review_step_recorder.record(
+            review_id=state.review_id, phase="outer_flow", node_type="parse_project",
+            status=status, action_text=action,
+            output_summary=f"参与 Agent：{len(detail.get('agents', []))} 个",
+            duration_ms=int((time.monotonic() - start) * 1000), detail=detail,
+        )
+        if status == "failed":
+            raise RuntimeError(detail.get("error", "项目解析失败"))
 
     # ---------- 节点 2：6 个内层 Crew 并行（Flow 多 @listen 机制）----------
 
@@ -188,7 +249,9 @@ class ReviewFlow(Flow[ReviewState]):
         """节点3：去重统计 + 生成摘要"""
         state = self.state
         await self._emit("flow_node_started", {"node": "aggregate", "label": "聚合结果"})
+        start = time.monotonic()
 
+        raw_count = sum(len(fs) for fs in state.findings_by_agent.values())
         seen: set[tuple] = set()
         all_findings: list[dict[str, Any]] = []
         for findings in state.findings_by_agent.values():
@@ -200,8 +263,10 @@ class ReviewFlow(Flow[ReviewState]):
 
         state.total_findings = len(all_findings)
         parts = []
+        severity_dist: dict[str, int] = {}
         for sev, label in (("critical", "🔴"), ("warning", "🟡"), ("suggestion", "🔵"), ("nitpick", "⚪")):
             count = sum(1 for f in all_findings if f.get("severity") == sev)
+            severity_dist[sev] = count
             if count:
                 parts.append(f"{label} {count} 个{ {'critical':'严重','warning':'警告','suggestion':'建议','nitpick':'细节'}[sev] }")
         state.summary = "✅ 未发现问题" if not parts else f"发现 {state.total_findings} 个问题：" + "，".join(parts)
@@ -210,6 +275,18 @@ class ReviewFlow(Flow[ReviewState]):
         await self._emit("flow_node_completed", {
             "node": "aggregate", "label": "聚合结果", "total": state.total_findings,
         })
+        await review_step_recorder.record(
+            review_id=state.review_id, phase="outer_flow", node_type="aggregate",
+            status="completed",
+            action_text=(
+                f"合并各 Agent 发现并去重：去重前 {raw_count} 条 → 去重后 {state.total_findings} 条；"
+                f"严重度分布：" + "、".join(f"{sev} {n}" for sev, n in severity_dist.items() if n)
+            ),
+            input_summary=f"参与 Agent：{'、'.join(state.findings_by_agent.keys()) or '无'}",
+            output_summary=state.summary,
+            duration_ms=int((time.monotonic() - start) * 1000),
+            detail={"raw": raw_count, "total": state.total_findings, "severity": severity_dist},
+        )
 
     # ---------- 节点 4：完成 ----------
 
@@ -219,6 +296,14 @@ class ReviewFlow(Flow[ReviewState]):
         await self._emit("flow_node_started", {"node": "generate_report", "label": "生成摘要"})
         logger.info("ReviewFlow: 编排完成", summary=self.state.summary)
         await self._emit("flow_node_completed", {"node": "generate_report", "label": "生成摘要"})
+        await review_step_recorder.record(
+            review_id=self.state.review_id, phase="outer_flow", node_type="generate_report",
+            status="completed",
+            action_text=f"生成审查总结摘要（供 API 层 ReportGenerator 生成完整报告）",
+            input_summary=f"聚合后 {self.state.total_findings} 条发现",
+            output_summary=self.state.summary,
+            detail={"summary": self.state.summary, "total": self.state.total_findings},
+        )
         return self.state
 
 

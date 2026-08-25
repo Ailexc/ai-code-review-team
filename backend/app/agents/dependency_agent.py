@@ -6,6 +6,7 @@
 LLM 补充：分析依赖清单，识别风险/弃用/过时/许可证问题。
 """
 
+import asyncio
 import json
 import subprocess
 import tomllib
@@ -131,8 +132,11 @@ class DependencyAgent(BaseAgent):
             return []
 
         try:
-            result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=120, cwd=str(path)
+            # 注：pip-audit 联网查询漏洞库较慢，同步 subprocess 会阻塞事件循环，
+            # 必须放到线程池执行（asyncio.to_thread）。
+            result = await asyncio.to_thread(
+                subprocess.run, cmd, capture_output=True, text=True,
+                timeout=120, cwd=str(path),
             )
         except subprocess.TimeoutExpired:
             logger.warning("pip-audit 超时")

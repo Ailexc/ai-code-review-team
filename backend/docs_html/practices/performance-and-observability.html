@@ -1,0 +1,105 @@
+<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 900px; line-height: 1.8; color: #333;">
+<h1 id="top">⚡ 审查性能优化 + 过程可观测性 — 完整复盘</h1>
+
+<div style="background: #e6f7ff; border-left: 4px solid #1677ff; padding: 12px 16px; border-radius: 4px; margin: 16px 0;">
+<strong>📌 本文档复盘一次真实工程实践</strong>：从「审查耗时 7.5 分钟、过程黑盒」出发，通过<strong>调研 → 实测验证 → 落地 → 回归测试</strong>，把安全审查提速 3 倍以上，并让每一步执行过程可回看、可学习。记录问题根因、调研结论、踩坑与修复，供后续参考。
+</div>
+
+<nav style="background: #fafafa; padding: 16px; border-radius: 8px; margin: 16px 0;">
+<strong>📑 目录</strong>
+<ul>
+<li><a href="#background" style="color: #1677ff;">1. 背景与目标</a></li>
+<li><a href="#perf" style="color: #1677ff;">2. 性能优化（3 项）</a></li>
+<li><a href="#semgrep" style="color: #1677ff;">3. Semgrep 规则本地化</a></li>
+<li><a href="#crewai" style="color: #1677ff;">4. 跳过 CrewAI 收尾 LLM</a></li>
+<li><a href="#observability" style="color: #1677ff;">5. 过程可观测性</a></li>
+<li><a href="#bugs" style="color: #1677ff;">6. 踩坑与修复</a></li>
+<li><a href="#result" style="color: #1677ff;">7. 结果与收益</a></li>
+<li><a href="#lessons" style="color: #1677ff;">8. 经验教训</a></li>
+</ul>
+</nav>
+
+<h2 id="background">1. 背景与目标</h2>
+<p>系统基于 CrewAI Flows + Crews 双层架构做代码审查。真实环境暴露两个问题：</p>
+<ul>
+<li><strong>性能慢</strong>：单 Agent 安全审查耗时 <strong>453 秒（7.5 分钟）</strong>，主要瓶颈在 Semgrep 联网下载规则 + 串行扫描 + CrewAI 收尾 LLM 重新格式化</li>
+<li><strong>过程黑盒</strong>：审查记录只有最终问题列表，用户看不到"每一步做了什么、耗时多少、跳过了什么"，无法学习整套流程</li>
+</ul>
+<p><strong>目标</strong>：① 大幅提速且不影响审查能力；② 让每一步执行过程可持久化、可回看、可学习。</p>
+
+<h2 id="perf">2. 性能优化（3 项）</h2>
+<p>通过日志拆解，453 秒的构成：</p>
+<table style="border-collapse: collapse; width: 100%; margin: 12px 0;">
+<tr style="background: #fafafa;"><th style="border:1px solid #eee; padding:8px; text-align:left;">阶段</th><th style="border:1px solid #eee; padding:8px; text-align:left;">耗时</th><th style="border:1px solid #eee; padding:8px; text-align:left;">优化</th></tr>
+<tr><td style="border:1px solid #eee; padding:8px;">Semgrep 6 规则集扫描</td><td style="border:1px solid #eee; padding:8px;">较大（联网下载 + 串行）</td><td style="border:1px solid #eee; padding:8px;">规则本地化 + 并行扫描</td></tr>
+<tr><td style="border:1px solid #eee; padding:8px;">LLM 文件分析</td><td style="border:1px solid #eee; padding:8px;">中（已并行 concurrency=3）</td><td style="border:1px solid #eee; padding:8px;">无需改动</td></tr>
+<tr><td style="border:1px solid #eee; padding:8px;">CrewAI 收尾 LLM</td><td style="border:1px solid #eee; padding:8px;">~86s（大头）</td><td style="border:1px solid #eee; padding:8px;">result_as_answer 跳过</td></tr>
+</table>
+
+<h2 id="semgrep">3. Semgrep 规则本地化</h2>
+<p><strong>调研结论</strong>：Semgrep 的 registry 规则（<code>p/python</code> 等）<strong>每次联网拉取、不持久缓存</strong>（实测 <code>~/.semgrep</code> 为空）。且部分规则集（<code>p/sqlalchemy</code>、<code>p/python_audit</code>、<code>p/spring</code>）在免费 Registry 不可用，会 <code>code=7</code> 退出。</p>
+<p><strong>方案</strong>：git clone 官方 <code>semgrep/semgrep-rules</code> 仓库到本地，用本地目录做 <code>--config</code>，彻底离线。</p>
+<pre style="background: #f6f8fa; padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 13px;">
+# 稀疏克隆（只取所需语言），规则包仅 8.6MB
+git clone --depth 1 --filter=blob:none --sparse https://github.com/semgrep/semgrep-rules
+git sparse-checkout set python javascript typescript java go
+# 扫描时用本地目录
+semgrep scan --config /app/app/data/semgrep-rules/python --metrics=off ...
+</pre>
+<p><strong>收益</strong>：完全离线（零网络延迟）、规则更全面（python 337 条 vs registry 151 条）。<code>Dockerfile</code> 构建时自动 clone，生产可复现。</p>
+
+<h2 id="crewai">4. 跳过 CrewAI 收尾 LLM</h2>
+<p><strong>关键认知</strong>：工具返回的 findings 已是确定的最终结果（schema 确定），CrewAI 却默认让 Agent 再调一次 LLM 重新格式化——这是<strong>重复劳动 + 大输入</strong>（17 条 findings 完整 JSON 塞给 LLM，单次 86 秒）。</p>
+<p><strong>调研与实测</strong>：CrewAI 原生支持 <code>@tool(name, result_as_answer=True)</code>，让工具结果<strong>直接作为最终答案</strong>，跳过收尾 LLM。</p>
+<pre style="background: #f6f8fa; padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 13px;">
+@tool(f"{agent_name}_review_scan", result_as_answer=True)
+async def review_scan(path: str = "") -> str:
+    findings = await agent.analyze(project_path=target, file_paths=file_paths)
+    return json.dumps({"findings": findings}, ensure_ascii=False)  # 必须返回对象
+</pre>
+<p><strong>实测验证</strong>：async tool + <code>result_as_answer=True</code> 在项目现有 <code>kickoff_async</code> 路径下完全可行（51.6s / 17 findings / 零收尾 LLM）。Agent 的"思考 → 决定调工具"学习价值完整保留，只省掉重复表述。</p>
+<div style="background: #fff1f0; border-left: 4px solid #ff4d4f; padding: 12px 16px; border-radius: 4px; margin: 12px 0;">
+<strong>⚠️ 踩坑</strong>：tool 必须返回 <code>{"findings": [...]}</code> 对象，<strong>不能返回顶层数组</strong>。否则 Task 的 <code>output_pydantic=FindingsOutput</code> 校验失败（<code>Invalid JSON: trailing characters</code>）。
+</div>
+
+<h2 id="observability">5. 过程可观测性</h2>
+<p><strong>问题</strong>：原 <code>progress_emitter</code> 是内存级事件总线，审查结束即清理，过程不持久化。</p>
+<p><strong>方案</strong>：新增 <code>review_steps</code> 表，持久化每一步执行记录。</p>
+<table style="border-collapse: collapse; width: 100%; margin: 12px 0;">
+<tr style="background: #fafafa;"><th style="border:1px solid #eee; padding:8px; text-align:left;">字段</th><th style="border:1px solid #eee; padding:8px; text-align:left;">说明</th></tr>
+<tr><td style="border:1px solid #eee; padding:8px;">phase</td><td style="border:1px solid #eee; padding:8px;">outer_flow / inner_crew</td></tr>
+<tr><td style="border:1px solid #eee; padding:8px;">node_type</td><td style="border:1px solid #eee; padding:8px;">parse_project / run_*_crew / aggregate / generate_report / skip_agent</td></tr>
+<tr><td style="border:1px solid #eee; padding:8px;">status</td><td style="border:1px solid #eee; padding:8px;">completed / skipped / failed</td></tr>
+<tr><td style="border:1px solid #eee; padding:8px;">action_text</td><td style="border:1px solid #eee; padding:8px;"><strong>中文描述"这一步做了什么"</strong>（学习核心）</td></tr>
+<tr><td style="border:1px solid #eee; padding:8px;">input/output_summary</td><td style="border:1px solid #eee; padding:8px;">输入输出摘要</td></tr>
+<tr><td style="border:1px solid #eee; padding:8px;">duration_ms</td><td style="border:1px solid #eee; padding:8px;">耗时</td></tr>
+<tr><td style="border:1px solid #eee; padding:8px;">detail</td><td style="border:1px solid #eee; padding:8px;">JSON 详情（tokens/异常/跳过原因）</td></tr>
+</table>
+<p>每个节点完成后调用 <code>review_step_recorder.record()</code> 落库；新增 <code>GET /reviews/{id}/steps</code> API；前端详情页新增「执行流程」时间线面板，展示外层 Flow + 内层 Crew 每一步。</p>
+
+<h2 id="bugs">6. 踩坑与修复</h2>
+<ul>
+<li><strong>SQLite 写锁（database is locked）</strong>：根因是 <code>review_service</code> 创建 review 后 <strong>未 commit</strong>，事务在审查期间一直持写锁，阻塞 <code>review_steps</code>/<code>llm_usage</code> 独立 session 写入。修复：创建 review 后<strong>立即 commit</strong> 释放锁。</li>
+<li><strong>ReviewStep relationship</strong>：<code>Review.steps</code> 用 <code>back_populates="review"</code>，但 <code>ReviewStep</code> 未定义反向关系，导致 SQLAlchemy mapper 初始化失败（500）。修复：补 <code>review</code> relationship。</li>
+<li><strong>asyncio.Lock 跨事件循环</strong>：模块级单例 Lock 绑定事件循环，pytest-asyncio 多 loop 下报错。修复：去掉 Lock，靠 WAL + busy_timeout + 短重试兜底。</li>
+<li><strong>并行步骤 sequence 重复</strong>：5 个 skip_agent 并行同时 <code>SELECT max</code> 导致 sequence 重复。修复：API 排序加 <code>created_at</code> 兜底。</li>
+</ul>
+
+<h2 id="result">7. 结果与收益</h2>
+<table style="border-collapse: collapse; width: 100%; margin: 12px 0;">
+<tr style="background: #fafafa;"><th style="border:1px solid #eee; padding:8px; text-align:left;">指标</th><th style="border:1px solid #eee; padding:8px; text-align:left;">优化前</th><th style="border:1px solid #eee; padding:8px; text-align:left;">优化后</th></tr>
+<tr><td style="border:1px solid #eee; padding:8px;">安全审查耗时</td><td style="border:1px solid #eee; padding:8px;">453s</td><td style="border:1px solid #eee; padding:8px;"><strong>143s（3 倍+提速）</strong></td></tr>
+<tr><td style="border:1px solid #eee; padding:8px;">Semgrep 异常</td><td style="border:1px solid #eee; padding:8px;">code=7 频繁</td><td style="border:1px solid #eee; padding:8px;">0（离线稳定）</td></tr>
+<tr><td style="border:1px solid #eee; padding:8px;">过程可观测</td><td style="border:1px solid #eee; padding:8px;">黑盒</td><td style="border:1px solid #eee; padding:8px;">9 步骤完整持久化 + 前端时间线</td></tr>
+<tr><td style="border:1px solid #eee; padding:8px;">后端测试</td><td style="border:1px solid #eee; padding:8px;">—</td><td style="border:1px solid #eee; padding:8px;">140 全过（零回归）</td></tr>
+</table>
+
+<h2 id="lessons">8. 经验教训</h2>
+<ul>
+<li><strong>先调研实测，再下结论</strong>：曾误判"async tool + result_as_answer 有 bug"，实际是测试脚本用了 <code>kickoff()</code>（sync）而非项目的 <code>kickoff_async()</code>。用与生产一致的路径验证，结论才可靠。</li>
+<li><strong>不要"为了学习而学习"</strong>：CrewAI 的收尾 LLM 是重复劳动，用 <code>result_as_answer</code> 程序级处理，既提速又不影响 Agent 自主调工具的学习价值。</li>
+<li><strong>SQLite 并发写要尽早提交事务</strong>：长事务持锁会阻塞所有独立 session 写入，是"database is locked"的常见根因。</li>
+<li><strong>可观测性是学习工具</strong>：持久化每一步的"做了什么/耗时/跳过原因"，让整套流程从黑盒变白盒，是学习多 Agent 编排的最佳方式。</li>
+</ul>
+
+</div>
