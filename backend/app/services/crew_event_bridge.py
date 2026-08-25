@@ -85,6 +85,22 @@ def _resolve_ctx(event: Any) -> dict[str, str] | None:
     return None
 
 
+def resolve(agent_id: str | None = None, role: str | None = None) -> dict[str, str] | None:
+    """按 agent_id / role 反查归属上下文（CorrelationStore 协议公开方法）"""
+    if agent_id and agent_id in _ctx_by_agent_id:
+        return _ctx_by_agent_id[agent_id]
+    if role and role in _ctx_by_role:
+        return _ctx_by_role[role]
+    return None
+
+
+def cleanup(review_id: str) -> None:
+    """清理指定审查的全部归属映射（CorrelationStore 协议公开方法）"""
+    global _ctx_by_agent_id, _ctx_by_role
+    _ctx_by_agent_id = {k: v for k, v in _ctx_by_agent_id.items() if v["review_id"] != review_id}
+    _ctx_by_role = {k: v for k, v in _ctx_by_role.items() if v["review_id"] != review_id}
+
+
 # ============ 字段提取工具 ============
 
 
