@@ -128,8 +128,26 @@ class ReviewFlow(Flow[ReviewState]):
         agent_start = time.monotonic()
         try:
             llm = await self._get_llm()
-            crew = build_review_crew(agent_name, state.project_path, state.file_paths, llm)
-            result = await crew.kickoff_async()
+            # 可观测性：事件桥接归属 + 工具内部埋点上下文（Semgrep 规则集 / 逐文件 LLM 分析）
+            from app.services.crew_event_bridge import bind as bridge_bind
+            from app.services.review_steps import current_review_ctx
+
+            if state.review_id:
+                bridge_bind(state.review_id, agent_name)
+            ctx_token = None
+            if state.review_id:
+                ctx_token = current_review_ctx.set(
+                    {"review_id": state.review_id, "agent_name": agent_name}
+                )
+            try:
+                crew = build_review_crew(
+                    agent_name, state.project_path, state.file_paths, llm,
+                    crew_name=f"{state.review_id}:{agent_name}" if state.review_id else f"{agent_name}_crew",
+                )
+                result = await crew.kickoff_async()
+            finally:
+                if ctx_token is not None:
+                    current_review_ctx.reset(ctx_token)
             findings = parse_crew_findings(result)
             state.findings_by_agent[agent_name] = findings
             duration_ms = int((time.monotonic() - agent_start) * 1000)

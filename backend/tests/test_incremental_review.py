@@ -32,7 +32,7 @@ async def test_run_incremental_with_changes(client):
         "total_added_lines": 10,
     })()
 
-    def fake_build(agent_name, project_path, file_paths, llm):
+    def fake_build(agent_name, project_path, file_paths, llm, crew_name=None):
         # 验证传入的 file_paths 是变更文件列表
         assert file_paths == ["app/main.py", "app/utils.py"]
         return FakeCrew([{"rule_id": "INC-1", "severity": "warning", "message": "变更引入问题", "file_path": "app/main.py", "line_start": 12}])

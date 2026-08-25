@@ -90,9 +90,25 @@ class CodeStyleAgent(BaseAgent):
 
         findings = []
 
-        # 1. Ruff 静态检查（确定性工具层）
+        # 1. Ruff 静态检查（确定性工具层；可观测性：记录子步骤）
+        import time as _time
+        from app.services.review_steps import review_step_recorder
+
+        _t0 = _time.monotonic()
         try:
-            findings.extend(self._run_ruff(path, file_paths))
+            ruff_findings = self._run_ruff(path, file_paths)
+            findings.extend(ruff_findings)
+            _dur = int((_time.monotonic() - _t0) * 1000)
+            try:
+                await review_step_recorder.record_tool_substep(
+                    agent_name=self.name,
+                    node_type="ruff_check",
+                    action_text=f"🔍 Ruff 静态检查：命中 {len(ruff_findings)} 条（{_dur / 1000:.1f}s）",
+                    duration_ms=_dur,
+                    detail={"findings": len(ruff_findings)},
+                )
+            except Exception:
+                pass
         except Exception as e:
             logger.warning("Ruff 检查失败", error=str(e))
 

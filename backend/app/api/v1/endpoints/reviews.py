@@ -14,8 +14,9 @@ from app.models.review import Review
 from app.models.finding import Finding
 from app.models.project import Project
 from app.models.review_step import ReviewStep
+from app.models.llm_call_log import LLMCallLog
 from app.schemas.review import ReviewCreate, ReviewResponse
-from app.schemas.review_step import ReviewStepResponse
+from app.schemas.review_step import ReviewStepResponse, LLMLogResponse
 from app.services.review_service import ReviewService
 from app.services.report_generator import ReportGenerator
 
@@ -235,6 +236,37 @@ async def get_review_steps(
     )
     steps = result.scalars().all()
     return [ReviewStepResponse.model_validate(s) for s in steps]
+
+
+@router.get("/{review_id}/llm-logs/{log_id}", response_model=LLMLogResponse)
+async def get_llm_log(
+    review_id: str,
+    log_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """获取单次 LLM 调用的完整输入输出（提示词/响应原文，供前端「查看全文」）"""
+    result = await db.execute(
+        select(LLMCallLog).where(LLMCallLog.id == log_id, LLMCallLog.review_id == review_id)
+    )
+    log = result.scalar_one_or_none()
+    if not log:
+        raise HTTPException(status_code=404, detail="LLM 调用记录不存在")
+    return LLMLogResponse.model_validate(log)
+
+
+@router.get("/{review_id}/llm-logs", response_model=list[LLMLogResponse])
+async def list_llm_logs(
+    review_id: str,
+    agent_name: str = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """列出本次审查全部 LLM 调用档案（可按 Agent 过滤；用于 token 汇总与学习回放）"""
+    query = select(LLMCallLog).where(LLMCallLog.review_id == review_id)
+    if agent_name:
+        query = query.where(LLMCallLog.agent_name == agent_name)
+    query = query.order_by(LLMCallLog.seq)
+    result = await db.execute(query)
+    return [LLMLogResponse.model_validate(l) for l in result.scalars().all()]
 
 
 @router.get("/{review_id}/report", response_class=PlainTextResponse)

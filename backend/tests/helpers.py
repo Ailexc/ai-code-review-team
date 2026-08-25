@@ -48,7 +48,7 @@ def patch_review_flow(agent_findings: dict[str, list[dict]]):
         with patch_review_flow({"security": SECURITY_FINDINGS}):
             await client.post("/api/v1/reviews/run", ...)
     """
-    def fake_build(agent_name, project_path, file_paths, llm):
+    def fake_build(agent_name, project_path, file_paths, llm, crew_name=None):
         return FakeCrew(agent_findings.get(agent_name, []))
 
     stack = ExitStack()

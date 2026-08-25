@@ -71,10 +71,25 @@ class TestCoverageAgent(BaseAgent):
 
         findings: list[dict[str, Any]] = []
 
-        # 1. AST 静态分析：识别未测试函数
+        # 1. AST 静态分析：识别未测试函数（可观测性：记录子步骤）
+        import time as _time
+        from app.services.review_steps import review_step_recorder
+
+        _t0 = _time.monotonic()
         try:
             ast_findings = self._analyze_coverage(path)
             findings.extend(ast_findings)
+            _dur = int((_time.monotonic() - _t0) * 1000)
+            try:
+                await review_step_recorder.record_tool_substep(
+                    agent_name=self.name,
+                    node_type="ast_coverage",
+                    action_text=f"🔍 AST 覆盖分析：识别 {len(ast_findings)} 个未测试函数（{_dur / 1000:.1f}s）",
+                    duration_ms=_dur,
+                    detail={"findings": len(ast_findings)},
+                )
+            except Exception:
+                pass
         except Exception as e:
             logger.warning("AST 覆盖分析失败", error=str(e))
 

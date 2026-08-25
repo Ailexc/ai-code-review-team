@@ -90,12 +90,41 @@ class DependencyAgent(BaseAgent):
 
         findings: list[dict[str, Any]] = []
 
+        # 可观测性：确定性扫描子步骤记录
+        import time as _time
+        from app.services.review_steps import review_step_recorder
+
         # 1. Python 依赖：pip-audit
+        _t0 = _time.monotonic()
         py_findings = await self._run_pip_audit(path)
+        _dur = int((_time.monotonic() - _t0) * 1000)
+        try:
+            await review_step_recorder.record_tool_substep(
+                agent_name=self.name,
+                node_type="pip_audit",
+                action_text=f"🔍 pip-audit 漏洞扫描：命中 {len(py_findings)} 条（{_dur / 1000:.1f}s）",
+                duration_ms=_dur,
+                detail={"findings": len(py_findings)},
+            )
+        except Exception:
+            pass
         findings.extend(py_findings)
 
         # 2. JS 依赖：npm registry 过时检测
+        _t0 = _time.monotonic()
         js_findings = await self._check_npm_outdated(path)
+        _dur = int((_time.monotonic() - _t0) * 1000)
+        if js_findings or _dur > 100:  # 无 package.json 时跳过记录（耗时极短）
+            try:
+                await review_step_recorder.record_tool_substep(
+                    agent_name=self.name,
+                    node_type="npm_outdated",
+                    action_text=f"🔍 npm 过时依赖检测：命中 {len(js_findings)} 条（{_dur / 1000:.1f}s）",
+                    duration_ms=_dur,
+                    detail={"findings": len(js_findings)},
+                )
+            except Exception:
+                pass
         findings.extend(js_findings)
 
         # 3. LLM 依赖风险点评

@@ -181,6 +181,7 @@ def build_review_crew(
     project_path: str,
     file_paths: list[str] | None,
     llm: LLM,
+    crew_name: str | None = None,
 ) -> Crew:
     """为单个专业 Agent 构建内层 Crew（上下文隔离）
 
@@ -189,6 +190,8 @@ def build_review_crew(
         project_path: 待审查项目路径
         file_paths: 限定审查文件（None = 全项目）
         llm: CrewAI LLM 实例（build_crew_llm 构造）
+        crew_name: Crew 唯一名称（"{review_id}:{agent_name}"），
+                   供事件桥接器把框架事件归属到具体审查与 Agent
 
     Returns:
         配置好的 Crew，调用方负责 kickoff
@@ -231,8 +234,9 @@ def build_review_crew(
         tasks=[task],
         process=Process.sequential,
         verbose=True,
+        name=crew_name or f"{agent_name}_crew",
     )
-    logger.info("内层 Crew 构建完成", agent=agent_name, project=project_path)
+    logger.info("内层 Crew 构建完成", agent=agent_name, project=project_path, crew_name=crew_name)
     return crew
 
 

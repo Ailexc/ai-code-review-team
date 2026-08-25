@@ -103,12 +103,41 @@ class SecurityAgent(BaseAgent):
         # 1. Semgrep 静态分析（本地规则集并行扫描）
         # 注：_run_semgrep 使用同步 subprocess，必须放到线程池执行（asyncio.to_thread），
         # 否则会阻塞事件循环；多个规则集通过 asyncio.gather 并行，避免串行拖慢整体。
+        # 可观测性：每个规则集记录一条子步骤（耗时 / 命中数 / 异常）。
+        from app.services.review_steps import review_step_recorder
+
         async def _scan_one(ruleset: str) -> list[dict[str, Any]]:
+            ruleset_short = ruleset.replace(str(RULES_ROOT) + "/", "")
+            t0 = asyncio.get_event_loop().time()
             try:
-                return await asyncio.to_thread(
+                results = await asyncio.to_thread(
                     self._run_semgrep, path, ruleset, file_paths
                 )
+                duration_ms = int((asyncio.get_event_loop().time() - t0) * 1000)
+                try:
+                    await review_step_recorder.record_tool_substep(
+                        agent_name=self.name,
+                        node_type="semgrep_ruleset",
+                        action_text=f"🔍 Semgrep 规则集 {ruleset_short}：命中 {len(results)} 条（{duration_ms / 1000:.1f}s）",
+                        duration_ms=duration_ms,
+                        detail={"ruleset": ruleset, "findings": len(results)},
+                    )
+                except Exception:
+                    pass
+                return results
             except Exception as e:
+                duration_ms = int((asyncio.get_event_loop().time() - t0) * 1000)
+                try:
+                    await review_step_recorder.record_tool_substep(
+                        agent_name=self.name,
+                        node_type="semgrep_ruleset",
+                        status="failed",
+                        action_text=f"⚠️ Semgrep 规则集 {ruleset_short} 执行失败：{str(e)[:100]}",
+                        duration_ms=duration_ms,
+                        detail={"ruleset": ruleset, "error": str(e)},
+                    )
+                except Exception:
+                    pass
                 logger.warning("Semgrep 规则集执行失败", ruleset=ruleset, error=str(e))
                 return []
 

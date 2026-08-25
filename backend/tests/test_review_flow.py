@@ -39,7 +39,7 @@ class FakeCrew:
 
 def _patch_flow(agent_findings: dict[str, list[dict]]):
     """把 build_review_crew 替换为按 agent_name 返回固定 findings 的 FakeCrew"""
-    def fake_build(agent_name, project_path, file_paths, llm):
+    def fake_build(agent_name, project_path, file_paths, llm, crew_name=None):
         return FakeCrew(agent_findings.get(agent_name, []))
 
     return (

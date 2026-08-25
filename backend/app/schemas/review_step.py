@@ -25,3 +25,25 @@ class ReviewStepResponse(BaseModel):
     detail: Optional[dict[str, Any]] = None
 
     model_config = {"from_attributes": True}
+
+
+class LLMLogResponse(BaseModel):
+    """LLM 调用全文档案（提示词/响应原文，学习用）"""
+
+    id: str
+    review_id: str
+    agent_name: Optional[str] = None
+    seq: int
+    source: str            # crewai / tool_internal
+    call_type: Optional[str] = None
+    model: Optional[str] = None
+    messages: Optional[list] = None
+    response: Optional[str] = None
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    latency_ms: Optional[int] = None
+    success: bool = True
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
