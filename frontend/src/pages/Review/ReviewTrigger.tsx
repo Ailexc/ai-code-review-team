@@ -102,6 +102,7 @@ export default function ReviewTrigger() {
   const [loading, setLoading] = useState(false);
   const [progressOpen, setProgressOpen] = useState(false);
   const [reviewType, setReviewType] = useState('full');
+  const [orchestrationMode, setOrchestrationMode] = useState<'parallel' | 'hierarchical'>('parallel');
 
   const [code, setCode] = useState('');
   const [filename, setFilename] = useState('pasted_code.py');
@@ -200,6 +201,23 @@ export default function ReviewTrigger() {
           }))}
           style={{ width: '100%', overflowX: 'auto' }}
         />
+        {/* 编排模式切换（学习对比：并行 vs 派发） */}
+        <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <Typography.Text type="secondary" style={{ fontSize: 13 }}>编排模式：</Typography.Text>
+          <Segmented
+            value={orchestrationMode}
+            onChange={(v) => setOrchestrationMode(v as 'parallel' | 'hierarchical')}
+            options={[
+              { value: 'parallel', label: '⚡ 并行模式（默认）' },
+              { value: 'hierarchical', label: '🎯 派发模式（实验）' },
+            ]}
+          />
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            {orchestrationMode === 'parallel'
+              ? '6 个独立 Crew 并行执行，代码层去重聚合 —— 快、省 token、结果稳定'
+              : 'Manager LLM 统一调度全部 Agent，可互相委派 —— 消耗数倍 token，输出依赖模型能力，用于对比学习'}
+          </Typography.Text>
+        </div>
       </Card>
 
       {/* 能力介绍折叠块 */}
@@ -316,6 +334,7 @@ export default function ReviewTrigger() {
         mode="inline"
         projectId={selectedProject || ''}
         reviewType={reviewType}
+        orchestrationMode={orchestrationMode}
         open={progressOpen}
         onClose={() => setProgressOpen(false)}
         onCompleted={handleProgressCompleted}

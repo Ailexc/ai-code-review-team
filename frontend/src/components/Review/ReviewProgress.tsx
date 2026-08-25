@@ -73,6 +73,7 @@ interface ReviewProgressProps {
   onClose: () => void;
   onCompleted: (reviewId: string, summary: string, healthScore?: number) => void;
   mode?: 'modal' | 'inline';
+  orchestrationMode?: 'parallel' | 'hierarchical';
 }
 
 export default function ReviewProgress({
@@ -82,6 +83,7 @@ export default function ReviewProgress({
   onClose,
   onCompleted,
   mode = 'modal',
+  orchestrationMode = 'parallel',
 }: ReviewProgressProps) {
   const [connected, setConnected] = useState(false);
   const [events, setEvents] = useState<ProgressEvent[]>([]);
@@ -108,7 +110,7 @@ export default function ReviewProgress({
 
     (async () => {
       try {
-        const review = await triggerApi.runReviewAsync(projectId, reviewType);
+        const review = await triggerApi.runReviewAsync(projectId, reviewType, orchestrationMode);
         if (cancelled) return;
         reviewIdRef.current = review.id;
 

@@ -33,6 +33,7 @@ interface Review {
   trigger_type: string;
   status: string;
   review_type: string;
+  orchestration_mode?: string;
   total_findings: number;
   critical_count: number;
   warning_count: number;
@@ -68,6 +69,7 @@ const AGENT_LABELS: Record<string, string> = {
   test_coverage: '测试覆盖',
   performance: '性能分析',
   git_review: 'Git 审查',
+  hierarchical: '派发模式 Manager',
 };
 
 // LLM 调用全文档案
@@ -406,7 +408,11 @@ export default function ReviewDetail() {
           <a onClick={() => navigate(`/projects/${review.project_id}`)}>{review.project_id.slice(0, 8)}...</a>
         </Descriptions.Item>
         <Descriptions.Item label="审查类型"><Tag color="blue">{review.review_type}</Tag></Descriptions.Item>
-        <Descriptions.Item label="触发方式"><Tag>{review.trigger_type}</Tag></Descriptions.Item>
+        <Descriptions.Item label="编排模式">
+          <Tag color={review.orchestration_mode === 'hierarchical' ? 'magenta' : 'cyan'}>
+            {review.orchestration_mode === 'hierarchical' ? '🎯 派发模式' : '⚡ 并行模式'}
+          </Tag>
+        </Descriptions.Item>
         <Descriptions.Item label="状态">
           <Tag color={review.status === 'completed' ? 'green' : review.status === 'failed' ? 'red' : 'processing'}>
             {review.status}

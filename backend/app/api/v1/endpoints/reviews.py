@@ -62,6 +62,7 @@ async def run_review(
     project_id: str,
     review_type: str = "full",
     trigger_type: str = "manual",
+    orchestration_mode: str = "parallel",
     db: AsyncSession = Depends(get_db),
 ):
     """执行审查 — 触发安全扫描并返回结果（同步，阻塞至完成）"""
@@ -76,6 +77,7 @@ async def run_review(
             project=project,
             review_type=review_type,
             trigger_type=trigger_type,
+            orchestration_mode=orchestration_mode if orchestration_mode in ("parallel", "hierarchical") else "parallel",
         )
         return ReviewResponse.model_validate(review)
     except Exception as e:
@@ -125,6 +127,7 @@ async def run_review_async(
     project_id: str,
     review_type: str = "full",
     trigger_type: str = "manual",
+    orchestration_mode: str = "parallel",
     db: AsyncSession = Depends(get_db),
 ):
     """异步执行审查 — 立即返回 running 状态，后台执行
@@ -134,6 +137,8 @@ async def run_review_async(
     import asyncio
 
     from app.core.database import async_session_factory
+
+    mode_val = orchestration_mode if orchestration_mode in ("parallel", "hierarchical") else "parallel"
 
     project_result = await db.execute(select(Project).where(Project.id == project_id))
     project = project_result.scalar_one_or_none()
@@ -148,6 +153,7 @@ async def run_review_async(
         project_id=project.id,
         trigger_type=trigger_type,
         review_type=review_type,
+        orchestration_mode=mode_val,
         status="running",
         started_at=datetime.now(timezone.utc),
     )
@@ -170,6 +176,7 @@ async def run_review_async(
                     review_type=review_type_val,
                     trigger_type=trigger_type_val,
                     existing_review_id=review_id,
+                    orchestration_mode=mode_val,
                 )
                 await bg_db.commit()
             except Exception as e:

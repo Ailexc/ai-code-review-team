@@ -23,7 +23,8 @@ from crewai.flow.flow import Flow, and_, listen, start
 from pydantic import BaseModel, Field
 
 from app.agents.llm_client import get_active_llm_config
-from app.flows.crew_factory import AGENT_PROFILES, build_crew_llm, build_review_crew, parse_crew_findings
+from app.flows.crew_factory import AGENT_PROFILES, FindingsOutput, build_crew_llm, build_review_crew, parse_crew_findings
+from app.flows.crew_factory import _make_scan_tool as _make_scan_tool_for
 from app.services.metrics import metrics
 from app.services.progress import progress_emitter
 from app.services.review_steps import review_step_recorder
@@ -49,11 +50,14 @@ class ReviewState(BaseModel):
     file_paths: list[str] | None = None
     review_type: str = "full"
     review_id: str = ""
+    # 编排模式：parallel（默认，6 独立 Crew 并行）/ hierarchical（manager 派发，学习对比）
+    orchestration_mode: str = "parallel"
 
     # 各 Agent 的产出
     findings_by_agent: dict[str, list[dict[str, Any]]] = Field(default_factory=dict)
     total_findings: int = 0
     summary: str = ""
+
 
 
 def _resolve_agents(review_type: str) -> list[str]:
@@ -77,6 +81,11 @@ class ReviewFlow(Flow[ReviewState]):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._llm = None
+        # 派发模式（hierarchical）专用：保证 6 个并行节点中只有第一个执行整体派发，
+        # 其余节点等待完成后快速返回（Flow 的 and_ 聚合结构保持不变）
+        import asyncio as _asyncio
+        self._hier_lock = _asyncio.Lock()
+        self._hier_done = False
 
     # ---------- 辅助 ----------
 
@@ -102,8 +111,22 @@ class ReviewFlow(Flow[ReviewState]):
         单个 Crew 失败不中断整体（记 agent_failed + 空结果），
         聚合节点继续处理其余 Agent 的结果。
         执行结果持久化到 review_steps（可观测性）。
+
+        编排模式：
+        - parallel（默认）：本节点即该 Agent 的独立 Crew；
+        - hierarchical（派发）：第一个到达的节点执行「manager 统一调度 6 Agent」
+          的整体 Crew，其余节点等待后快速返回 —— 学习对比两种编排范式。
         """
         state = self.state
+
+        # ===== 派发模式分发器 =====
+        if getattr(state, "orchestration_mode", "parallel") == "hierarchical":
+            async with self._hier_lock:
+                if not self._hier_done:
+                    await self._run_hierarchical_crew()
+                    self._hier_done = True
+            return
+
         resolved = _resolve_agents(state.review_type)
         if agent_name not in resolved:
             await review_step_recorder.record(
@@ -188,6 +211,128 @@ class ReviewFlow(Flow[ReviewState]):
                 duration_ms=int((time.monotonic() - agent_start) * 1000),
                 detail={"error": str(e), "role": role},
             )
+
+    # ---------- 派发模式：manager 统一调度（学习对比用） ----------
+
+    async def _run_hierarchical_crew(self) -> None:
+        """派发模式：单个 Crew 容纳全部专业 Agent，Process.hierarchical 由 manager LLM 调度
+
+        与并行模式的差异（学习对比点）：
+        - manager 看得到所有 Agent 的能力描述，自主决定任务分派顺序与方式；
+        - Agent 之间可互相委派（allow_delegation=True）；
+        - token 消耗显著更高（manager 每轮决策都调模型），输出质量依赖模型能力。
+        """
+        from crewai import Agent, Crew, Process, Task
+
+        state = self.state
+        resolved = _resolve_agents(state.review_type)
+        llm = await self._get_llm()
+
+        await self._emit("agent_started", {
+            "agent": "hierarchical",
+            "role": "审查调度 Manager",
+            "goal": f"统一调度 {len(resolved)} 个专业审查 Agent 完成 {state.review_type} 审查",
+        })
+        start = time.monotonic()
+        crew_name = f"{state.review_id}:hierarchical" if state.review_id else "hierarchical_crew"
+
+        # 上下文注入：与并行模式同款（引擎缓存复用 + ContextVar）
+        from app.agents.context_enhancer import get_or_build_engine, set_current_engine, reset_current_engine
+        from app.services.crew_event_bridge import bind as bridge_bind
+        from app.services.review_steps import current_review_ctx
+
+        if state.review_id:
+            bridge_bind(state.review_id, "hierarchical")
+        ctx_token = current_review_ctx.set(
+            {"review_id": state.review_id, "agent_name": "hierarchical"}
+        ) if state.review_id else None
+        engine_token = set_current_engine(get_or_build_engine(state.project_path, state.file_paths))
+        try:
+            agents: list[Agent] = []
+            tasks: list[Task] = []
+            task_agent_map: dict[int, str] = {}
+            for idx, agent_name in enumerate(resolved):
+                profile = AGENT_PROFILES[agent_name]
+                scan_tool = _make_scan_tool_for(agent_name, state.project_path, state.file_paths)
+                agent = Agent(
+                    role=profile["role"],
+                    goal=profile["goal"],
+                    backstory=profile["backstory"],
+                    tools=[scan_tool],
+                    llm=llm,
+                    verbose=True,
+                    allow_delegation=True,  # 派发模式允许委派 —— 与并行模式的关键差异
+                )
+                task = Task(
+                    description=(
+                        f"对项目「{state.project_path}」执行{profile['role']}审查。\n"
+                        f"必须调用工具 `{agent_name}_review_scan` 获取扫描结果，"
+                        f"审阅后输出完整 findings 列表（severity: critical/warning/suggestion/nitpick）。"
+                    ),
+                    expected_output='JSON 对象：{"findings": [...]}',
+                    agent=agent,
+                    output_pydantic=FindingsOutput,
+                )
+                agents.append(agent)
+                tasks.append(task)
+                task_agent_map[idx] = agent_name
+
+            crew = Crew(
+                agents=agents,
+                tasks=tasks,
+                process=Process.hierarchical,
+                manager_llm=llm,
+                verbose=True,
+                name=crew_name,
+            )
+            result = await crew.kickoff_async()
+        except Exception as e:
+            logger.error("ReviewFlow: 派发模式执行失败", error=str(e))
+            for agent_name in resolved:
+                state.findings_by_agent[agent_name] = []
+                await self._emit("agent_failed", {"agent": agent_name, "error": str(e)})
+            await review_step_recorder.record(
+                review_id=state.review_id, phase="inner_crew", node_type="hierarchical_crew",
+                status="failed", agent_name="hierarchical",
+                action_text=f"⚠️ 派发模式执行失败：{str(e)[:150]}",
+                duration_ms=int((time.monotonic() - start) * 1000),
+                detail={"error": str(e)},
+            )
+            return
+        finally:
+            if ctx_token is not None:
+                current_review_ctx.reset(ctx_token)
+            reset_current_engine(engine_token)
+
+        # 解析各 Task 输出 → 按 Agent 归档
+        total = 0
+        try:
+            task_outputs = getattr(result, "task_outputs", None) or []
+            for idx, out in enumerate(task_outputs):
+                agent_name = task_agent_map.get(idx, "unknown")
+                pyd = getattr(out, "pydantic", None)
+                items = getattr(pyd, "findings", None) if pyd else None
+                findings = [f.model_dump() if hasattr(f, "model_dump") else dict(f) for f in (items or [])]
+                state.findings_by_agent[agent_name] = findings
+                total += len(findings)
+        except Exception as e:
+            logger.warning("派发模式结果解析降级", error=str(e))
+
+        duration_ms = int((time.monotonic() - start) * 1000)
+        metrics.record_agent_run("hierarchical", True, time.monotonic() - start, total)
+        await self._emit("agent_completed", {"agent": "hierarchical", "findings": total})
+        await review_step_recorder.record(
+            review_id=state.review_id, phase="inner_crew", node_type="hierarchical_crew",
+            status="completed", agent_name="hierarchical",
+            action_text=(
+                f"🎯 派发模式：Manager 统一调度 {len(resolved)} 个专业 Agent"
+                f"（Process.hierarchical，可互相委派），产出 {total} 条发现"
+            ),
+            input_summary=f"项目：{state.project_name}；参与 Agent：{'、'.join(resolved)}",
+            output_summary=f"{total} 条发现",
+            duration_ms=duration_ms,
+            detail={"mode": "hierarchical", "agents": resolved, "findings": total},
+        )
 
     # ---------- 节点 1：解析 ----------
 
@@ -339,6 +484,7 @@ async def run_review_flow(
     file_paths: list[str] | None = None,
     project_name: str = "Unknown",
     review_id: str = "",
+    orchestration_mode: str = "parallel",
 ) -> ReviewState:
     """便捷入口：运行 ReviewFlow 并返回最终状态（生产主路径）"""
     flow = ReviewFlow()
@@ -348,6 +494,7 @@ async def run_review_flow(
         "file_paths": file_paths,
         "review_type": review_type,
         "review_id": review_id,
+        "orchestration_mode": orchestration_mode if orchestration_mode in ("parallel", "hierarchical") else "parallel",
     }
     result = await flow.kickoff_async(inputs)
     # kickoff 返回 StateWithId 包装对象，其属性代理到底层 state
@@ -357,6 +504,7 @@ async def run_review_flow(
         file_paths=getattr(result, "file_paths", file_paths),
         review_type=getattr(result, "review_type", review_type),
         review_id=getattr(result, "review_id", review_id),
+        orchestration_mode=inputs["orchestration_mode"],
         findings_by_agent=dict(getattr(result, "findings_by_agent", {}) or {}),
         total_findings=getattr(result, "total_findings", 0),
         summary=getattr(result, "summary", ""),

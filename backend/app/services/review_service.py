@@ -51,6 +51,7 @@ class ReviewService:
         trigger_type: str = "manual",
         file_paths: list[str] | None = None,
         existing_review_id: str | None = None,
+        orchestration_mode: str = "parallel",
     ) -> Review:
         """执行一次完整审查（CrewAI Flows + Crews 双层架构）
 
@@ -60,6 +61,7 @@ class ReviewService:
             trigger_type: 触发方式 (manual / cli / web_trigger / incremental)
             file_paths: 指定审查的文件列表，None 则扫描项目目录
             existing_review_id: 若由 run-async 预创建，则复用该审查记录
+            orchestration_mode: 编排模式 parallel（默认）/ hierarchical（manager 派发，学习对比）
         """
         # 创建或复用审查记录
         if existing_review_id:
@@ -70,12 +72,13 @@ class ReviewService:
                     project_id=project.id,
                     trigger_type=trigger_type,
                     review_type=review_type,
+                    orchestration_mode=orchestration_mode,
                     status="running",
                     started_at=datetime.now(timezone.utc),
                 )
                 self.db.add(review)
                 await self.db.flush()
-                await self.db.commit()  # 尽早提交，释放 SQLite 写锁（审查期间供 review_steps 等独立 session 写入）
+                await self.db.commit()  #尽早提交，释放 SQLite 写锁（审查期间供 review_steps 等独立 session 写入）
             else:
                 review.status = "running"
                 review.started_at = datetime.now(timezone.utc)
@@ -86,12 +89,13 @@ class ReviewService:
                 project_id=project.id,
                 trigger_type=trigger_type,
                 review_type=review_type,
+                orchestration_mode=orchestration_mode,
                 status="running",
                 started_at=datetime.now(timezone.utc),
             )
             self.db.add(review)
             await self.db.flush()
-            await self.db.commit()  # 尽早提交，释放 SQLite 写锁
+            await self.db.commit()  #尽早提交，释放 SQLite 写锁
         logger.info("开始审查", review_id=review.id, project=project.name, type=review_type)
         await progress_emitter.emit(review.id, "review_started", {
             "review_type": review_type, "project": project.name,
@@ -110,6 +114,7 @@ class ReviewService:
                 file_paths=file_paths,
                 project_name=project.name,
                 review_id=review.id,
+                orchestration_mode=orchestration_mode,
             )
 
             # ===== 持久化：findings_by_agent → Finding 表 =====

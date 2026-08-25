@@ -53,6 +53,31 @@ async def get_db() -> AsyncSession:
 
 
 async def init_db():
-    """初始化数据库（创建所有表）"""
+    """初始化数据库（创建所有表 + 轻量列迁移）"""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await _ensure_columns(conn)
+
+
+# 轻量列迁移：create_all 只建缺失的表，不会给已有表加列。
+# 这里按 (表, 列, DDL) 声明新增列，PRAGMA 检查缺列才执行 ALTER（幂等）。
+_PENDING_COLUMNS: list[tuple[str, str, str]] = [
+    ("reviews", "orchestration_mode",
+     "ALTER TABLE reviews ADD COLUMN orchestration_mode VARCHAR(20) NOT NULL DEFAULT 'parallel'"),
+]
+
+
+async def _ensure_columns(conn) -> None:
+    """幂等补齐已存在表缺失的列（SQLite ALTER ADD COLUMN 支持带默认值）"""
+    from sqlalchemy import text
+
+    for table, column, ddl in _PENDING_COLUMNS:
+        try:
+            rows = await conn.execute(text(f"PRAGMA table_info({table})"))
+            existing = {row[1] for row in rows.fetchall()}
+            if column not in existing:
+                await conn.execute(text(ddl))
+        except Exception as e:
+            # 迁移失败不阻断启动（新库由 create_all 直接建出全列，无需 ALTER）
+            import structlog
+            structlog.get_logger().warning("列迁移跳过", table=table, column=column, error=str(e))

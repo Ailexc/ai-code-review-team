@@ -21,6 +21,8 @@ class Review(Base):
     trigger_type: Mapped[str] = mapped_column(String(50), nullable=False)  # manual, scheduled, webhook
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="pending", index=True)  # pending, running, completed, failed
     review_type: Mapped[str] = mapped_column(String(100), nullable=False)  # full, security, code_style, dependency, test_coverage
+    # 编排模式：parallel = 6 独立 Crew 并行（默认）；hierarchical = manager 派发（学习对比用）
+    orchestration_mode: Mapped[str] = mapped_column(String(20), nullable=False, default="parallel")
 
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

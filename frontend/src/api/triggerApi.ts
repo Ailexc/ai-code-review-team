@@ -60,10 +60,10 @@ export const triggerApi = {
   runIncremental: (projectId: string, reviewType: string = 'full', base: string = 'HEAD~1'): Promise<ReviewResult> =>
     api.post(`/reviews/run-incremental?project_id=${projectId}&review_type=${reviewType}&base=${base}`),
 
-  runReviewAsync: async (projectId: string, reviewType: string = 'full'): Promise<ReviewResult> => {
+  runReviewAsync: async (projectId: string, reviewType: string = 'full', orchestrationMode: string = 'parallel'): Promise<ReviewResult> => {
     // 异步触发，立即返回 running 状态
     const resp = await fetch(
-      `/api/v1/reviews/run-async?project_id=${projectId}&review_type=${reviewType}`,
+      `/api/v1/reviews/run-async?project_id=${projectId}&review_type=${reviewType}&orchestration_mode=${orchestrationMode}`,
       { method: 'POST' },
     );
     if (!resp.ok) throw new Error('触发审查失败');

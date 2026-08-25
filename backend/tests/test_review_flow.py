@@ -144,3 +144,34 @@ async def test_review_flow_emits_progress_events(tmp_path):
         assert "agent_completed" in events
     finally:
         progress_emitter.unsubscribe("flow-test-events", queue)
+
+
+# ============ 编排模式：派发（hierarchical）============
+
+@pytest.mark.asyncio
+async def test_hierarchical_mode_dispatches_once(client):
+    """hierarchical 模式：6 个节点中只有第一个执行整体派发，其余快速返回"""
+    from unittest.mock import AsyncMock, patch
+
+    calls = {"n": 0}
+
+    async def fake_hier(self):
+        calls["n"] += 1
+        self.state.findings_by_agent["security"] = [{
+            "rule_id": "H-1", "severity": "warning", "message": "派发模式发现",
+            "file_path": "a.py", "line_start": 1,
+        }]
+
+    with patch("app.flows.review_flow.ReviewFlow._run_hierarchical_crew", new=fake_hier), \
+         patch("app.flows.review_flow.ReviewFlow._get_llm", new=AsyncMock(return_value=object())):
+        flow = ReviewFlow()
+        result = await flow.kickoff_async({
+            "project_path": "/tmp/x",
+            "project_name": "t",
+            "review_type": "security",
+            "review_id": "",
+            "orchestration_mode": "hierarchical",
+        })
+
+    assert calls["n"] == 1  # 只执行一次
+    assert result.findings_by_agent.get("security")
