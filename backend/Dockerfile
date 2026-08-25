@@ -16,31 +16,25 @@ RUN sed -i "s|deb.debian.org|${APT_MIRROR}|g; s|security.debian.org|${APT_MIRROR
 RUN npm config set registry https://registry.npmmirror.com
 
 # ===== 多语言标准工具（真实支持，非模拟）=====
-# - ESLint 9：JS/TS 规范检查事实标准（全局安装 + typescript-eslint 解析器）
-# - golangci-lint：Go 官方推荐 meta-linter（单二进制）
-# - OSV-Scanner：Google 官方多生态漏洞扫描器（覆盖 go.mod；npm audit 覆盖 JS）
-# 优先 COPY 宿主机 tools/ 预下载的二进制（构建期零 GitHub 依赖）；
-# 缺失时回退到 ghproxy.net 加速下载（国内 GitHub 代理）。
-ARG GOLANGCI_LINT_VERSION=1.61.0
+# - ESLint 9：JS/TS 规范检查事实标准（npm 淘宝镜像安装）
+# - golangci-lint：Go 官方推荐 meta-linter（Go 工具链 go install，走 goproxy.cn）
+# - OSV-Scanner：Google 官方多生态漏洞扫描器（同上，覆盖 go.mod；npm audit 覆盖 JS）
+# 关键：全链路国内官方镜像（Go 官方中国镜像 golang.google.cn + goproxy.cn），
+# 零 GitHub 依赖，构建稳定可固化。
+ARG GOLANGCI_LINT_VERSION=v1.61.0
 ARG OSV_SCANNER_VERSION=v1.9.2
+ARG GO_VERSION=1.23.4
 RUN npm install -g eslint@9 typescript @typescript-eslint/parser @typescript-eslint/eslint-plugin \
-    && mkdir -p /tools
-COPY tools/golangci-lint.tar.gz /tools/golangci-lint.tar.gz
-COPY tools/osv-scanner /tools/osv-scanner
-RUN if [ -s /tools/golangci-lint.tar.gz ]; then \
-        tar -xz --strip-components=1 -C /usr/local/bin -f /tools/golangci-lint.tar.gz "golangci-lint-${GOLANGCI_LINT_VERSION}-linux-amd64/golangci-lint"; \
-    else \
-        curl -sSfL --retry 3 "https://ghproxy.net/https://github.com/golangci/golangci-lint/releases/download/v${GOLANGCI_LINT_VERSION}/golangci-lint-${GOLANGCI_LINT_VERSION}-linux-amd64.tar.gz" \
-            | tar -xz --strip-components=1 -C /usr/local/bin "golangci-lint-${GOLANGCI_LINT_VERSION}-linux-amd64/golangci-lint"; \
-    fi \
-    && if [ -s /tools/osv-scanner ]; then \
-        cp /tools/osv-scanner /usr/local/bin/osv-scanner; \
-    else \
-        curl -sSfL --retry 3 -o /usr/local/bin/osv-scanner \
-            "https://ghproxy.net/https://github.com/google/osv-scanner/releases/download/${OSV_SCANNER_VERSION}/osv-scanner_linux_amd64"; \
-    fi \
-    && chmod +x /usr/local/bin/osv-scanner \
-    && rm -rf /tools
+    && curl -sSfL -o /tmp/go.tgz "https://golang.google.cn/dl/go${GO_VERSION}.linux-amd64.tar.gz" \
+    && tar -C /usr/local -xzf /tmp/go.tgz && rm /tmp/go.tgz \
+    && export PATH="/usr/local/go/bin:${PATH}" \
+    && export GOPROXY="https://goproxy.cn,direct" \
+    && go install "github.com/golangci/golangci-lint/cmd/golangci-lint@${GOLANGCI_LINT_VERSION}" \
+    && go install "github.com/google/osv-scanner/cmd/osv-scanner@${OSV_SCANNER_VERSION}" \
+    && cp /root/go/bin/golangci-lint /usr/local/bin/ \
+    && cp /root/go/bin/osv-scanner /usr/local/bin/ \
+    && chmod +x /usr/local/bin/golangci-lint /usr/local/bin/osv-scanner \
+    && rm -rf /root/go /usr/local/go  # 清理 Go 工具链，仅保留编译产物（减小镜像）
 
 # 配置 pip 使用国内镜像源（阿里云），加速依赖安装（CrewAI/Semgrep 依赖树庞大）
 # 注：清华/阿里镜像对 uv 二进制包同步异常（仅远古 0.0.5/0.1.0），故直接用 pip 安装
