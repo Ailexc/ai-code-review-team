@@ -1,0 +1,21 @@
+# Python 缓存/虚拟环境（大目录，排除加速 build context）
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 测试与本地数据（构建不需要）
+tests/
+data/*.db
+data/*.db-*
+uploads/
+
+# 开发配置
+.env
+*.local
+
+# 注意：tools/ 目录保留（Dockerfile 用 COPY tools/ 预下载的多语言二进制）
+# 二进制不在 git 版本控制，见 backend/tools/README

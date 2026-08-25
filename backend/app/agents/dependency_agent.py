@@ -127,6 +127,14 @@ class DependencyAgent(BaseAgent):
                 pass
         findings.extend(js_findings)
 
+        # 2b. JS 依赖漏洞：npm audit（npm 自带标准漏洞扫描）
+        audit_findings = await self._run_npm_audit(path)
+        findings.extend(audit_findings)
+
+        # 2c. Go 依赖漏洞：OSV-Scanner（Google 官方，覆盖 go.mod）
+        go_vuln_findings = await self._run_osv_scanner(path)
+        findings.extend(go_vuln_findings)
+
         # 3. LLM 依赖风险点评
         try:
             llm_findings = await self._run_llm_analysis(path)
@@ -292,3 +300,156 @@ class DependencyAgent(BaseAgent):
             if f.exists():
                 result.append((name, f.read_text(errors="ignore")[:4000]))
         return result
+
+    async def _run_npm_audit(self, path: Path) -> list[dict[str, Any]]:
+        """运行 npm audit（npm 自带标准漏洞扫描，查询 npm 审计库）
+
+        在临时目录副本上执行（--package-lock-only），不触碰目标项目文件。
+        """
+        import asyncio
+        import tempfile
+        import time as _time
+
+        pkg_json = path / "package.json"
+        if not pkg_json.exists():
+            return []
+
+        t0 = _time.monotonic()
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                # 拷贝清单到临时目录（audit 需要 lockfile；--package-lock-only 只解析清单）
+                import shutil
+                shutil.copy(pkg_json, Path(tmp) / "package.json")
+                lock = path / "package-lock.json"
+                if lock.exists():
+                    shutil.copy(lock, Path(tmp) / "package-lock.json")
+
+                def _run() -> tuple[str, bool]:
+                    r = subprocess.run(
+                        ["npm", "audit", "--json"],
+                        capture_output=True, text=True, timeout=120, cwd=tmp,
+                    )
+                    return r.stdout, True
+
+                stdout = await asyncio.to_thread(_run)
+        except FileNotFoundError:
+            logger.warning("npm 命令未找到（镜像未安装 Node 工具链？），跳过 npm audit")
+            return []
+        except Exception as e:
+            logger.warning("npm audit 执行失败", error=str(e))
+            return []
+        duration_ms = int((_time.monotonic() - t0) * 1000)
+
+        stdout = stdout[0] if isinstance(stdout, tuple) else stdout
+        if not stdout.strip():
+            return []
+        try:
+            data = json.loads(stdout)
+        except json.JSONDecodeError:
+            return []
+
+        # npm audit JSON：vulnerabilities 字典（name → {severity, via, ...}）
+        severity_map = {"critical": "critical", "high": "warning", "moderate": "suggestion", "low": "nitpick"}
+        findings: list[dict[str, Any]] = []
+        vulns = data.get("vulnerabilities", {}) or {}
+        for name, info in vulns.items():
+            if not isinstance(info, dict):
+                continue
+            sev = severity_map.get(info.get("severity", ""), "warning")
+            via = [v if isinstance(v, str) else v.get("title", "") for v in (info.get("via") or [])][:2]
+            findings.append({
+                "rule_id": f"NPM-AUDIT-{name}",
+                "severity": sev,
+                "message": f"{name} 存在已知漏洞（{info.get('severity', '?')}）：{'；'.join(v for v in via if v)}",
+                "file_path": "package.json",
+                "line_start": None,
+                "code_snippet": f'"{name}": {json.dumps(info.get("range", ""))}',
+                "suggestion": f"升级 {name} 至安全版本（fixAvailable: {json.dumps(info.get('fixAvailable', False))}）",
+            })
+
+        try:
+            from app.services.review_steps import review_step_recorder
+
+            await review_step_recorder.record_tool_substep(
+                agent_name=self.name,
+                node_type="npm_audit",
+                action_text=f"🔍 npm audit 漏洞扫描：命中 {len(findings)} 条（{duration_ms / 1000:.1f}s）",
+                duration_ms=duration_ms,
+                detail={"findings": len(findings)},
+            )
+        except Exception:
+            pass
+        return findings
+
+    async def _run_osv_scanner(self, path: Path) -> list[dict[str, Any]]:
+        """运行 OSV-Scanner（Google 官方多生态漏洞库扫描器，覆盖 go.mod）
+
+        仅在有 go.mod 的项目执行；输出 JSON 解析为标准 findings。
+        """
+        import asyncio
+        import time as _time
+
+        if not (path / "go.mod").exists():
+            return []
+
+        t0 = _time.monotonic()
+        try:
+            def _run() -> str:
+                r = subprocess.run(
+                    ["osv-scanner", "--format", "json", "--lockfile", f"go.mod:{str(path / 'go.mod')}"],
+                    capture_output=True, text=True, timeout=180,
+                )
+                # osv-scanner 有发现时退出码 1，stdout 仍为合法 JSON
+                return r.stdout
+
+            stdout = await asyncio.to_thread(_run)
+        except FileNotFoundError:
+            logger.warning("osv-scanner 命令未找到（镜像未安装？），跳过 Go 依赖漏洞扫描")
+            return []
+        except Exception as e:
+            logger.warning("OSV-Scanner 执行失败", error=str(e))
+            return []
+        duration_ms = int((_time.monotonic() - t0) * 1000)
+
+        if not stdout.strip():
+            return []
+        try:
+            data = json.loads(stdout)
+        except json.JSONDecodeError:
+            return []
+
+        severity_rank = {"7.0": "critical", "9.0": "critical"}
+        findings: list[dict[str, Any]] = []
+        for res in data.get("results", []) or []:
+            for pkg in res.get("packages", []) or []:
+                for v in pkg.get("vulnerabilities", []) or []:
+                    vid = v.get("id", "OSV")
+                    aliases = [a for a in v.get("aliases", []) if a.startswith("CVE")]
+                    summary_txt = v.get("summary") or v.get("details", "")[:120]
+                    sev = "warning"
+                    for sev_item in v.get("database_specific", {}).get("severity", []) or []:
+                        pass
+                    findings.append({
+                        "rule_id": f"GO-VULN-{vid}",
+                        "severity": sev,
+                        "message": f"{pkg.get('package', {}).get('name', '?')}: {summary_txt}",
+                        "file_path": "go.mod",
+                        "line_start": None,
+                        "code_snippet": pkg.get("package", {}).get("version", ""),
+                        "suggestion": f"修复版本：{', '.join(v.get('affected', [{}])[0].get('ranges', [{}])[0].get('events', [{'fixed': '?'}])[0].get('fixed', '?') for _ in [0])}"[:200],
+                        "metadata": {"aliases": aliases},
+                    })
+
+        try:
+            from app.services.review_steps import review_step_recorder
+
+            await review_step_recorder.record_tool_substep(
+                agent_name=self.name,
+                node_type="osv_scanner",
+                action_text=f"🔍 OSV-Scanner Go 依赖漏洞扫描：命中 {len(findings)} 条（{duration_ms / 1000:.1f}s）",
+                duration_ms=duration_ms,
+                detail={"findings": len(findings)},
+            )
+        except Exception:
+            pass
+        return findings

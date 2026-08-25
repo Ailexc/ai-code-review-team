@@ -50,6 +50,18 @@ export const KNOWLEDGE_CARDS: Record<string, KnowledgeCard> = {
     text: 'Ruff 是 Python 生态最快的 linter：纯规则匹配（命名/复杂度/import 等），结果确定可复现。RULE_SEVERITY 映射表把 Ruff 规则码翻译为审查严重度。',
     refs: [{ file: 'app/agents/code_style_agent.py', desc: '_run_ruff / RULE_SEVERITY' }],
   },
+  lint_check: {
+    text: '规范检查按语言路由到各生态的事实标准工具：Python 用 Ruff，TypeScript/JS 用 ESLint 9（+typescript-eslint），Go 用 golangci-lint（聚合 govet/staticcheck）。全部是官方标准工具的真实调用，不是模拟实现。',
+    refs: [{ file: 'app/agents/code_style_agent.py', desc: '_run_eslint / _run_golangci_lint' }],
+  },
+  npm_audit: {
+    text: 'npm audit 是 npm 自带的标准漏洞扫描：把清单与 npm 审计库比对识别已知漏洞。在临时目录副本上执行，不触碰目标项目文件。',
+    refs: [{ file: 'app/agents/dependency_agent.py', desc: '_run_npm_audit' }],
+  },
+  osv_scanner: {
+    text: 'OSV-Scanner 是 Google 官方的多生态漏洞库扫描器（覆盖 go.mod、package-lock 等）。Go 生态没有 npm audit 的直接等价物，OSV 是事实标准方案。',
+    refs: [{ file: 'app/agents/dependency_agent.py', desc: '_run_osv_scanner' }],
+  },
   pip_audit: {
     text: 'pip-audit 查询 PyPI/OSV 漏洞库识别已知 CVE（需联网）。这是供应链安全的标准做法：漏洞发现靠数据库比对，不靠模型猜。',
     refs: [{ file: 'app/agents/dependency_agent.py', desc: '_run_pip_audit' }],

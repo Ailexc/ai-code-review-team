@@ -90,27 +90,38 @@ class CodeStyleAgent(BaseAgent):
 
         findings = []
 
-        # 1. Ruff 静态检查（确定性工具层；可观测性：记录子步骤）
+        # 1. 确定性规范检查（按语言路由到各生态标准工具；可观测性：记录子步骤）
         import time as _time
+        from app.agents.context_enhancer import get_or_build_engine  # noqa: F401 (引擎由 Flow 注入)
         from app.services.review_steps import review_step_recorder
 
+        language = self._detect_language(path)
         _t0 = _time.monotonic()
         try:
-            ruff_findings = self._run_ruff(path, file_paths)
-            findings.extend(ruff_findings)
+            if language == "python":
+                lint_findings = self._run_ruff(path, file_paths)
+            elif language in ("javascript", "typescript"):
+                lint_findings = self._run_eslint(path, file_paths)
+            elif language == "go":
+                lint_findings = self._run_golangci_lint(path)
+            else:
+                lint_findings = self._run_ruff(path, file_paths)  # 兜底尝试 Ruff
+
+            findings.extend(lint_findings)
             _dur = int((_time.monotonic() - _t0) * 1000)
+            tool_name = {"python": "Ruff", "javascript": "ESLint", "typescript": "ESLint", "go": "golangci-lint"}.get(language, "Ruff")
             try:
                 await review_step_recorder.record_tool_substep(
                     agent_name=self.name,
-                    node_type="ruff_check",
-                    action_text=f"🔍 Ruff 静态检查：命中 {len(ruff_findings)} 条（{_dur / 1000:.1f}s）",
+                    node_type="lint_check",
+                    action_text=f"🔍 {tool_name} 静态检查（{language}）：命中 {len(lint_findings)} 条（{_dur / 1000:.1f}s）",
                     duration_ms=_dur,
-                    detail={"findings": len(ruff_findings)},
+                    detail={"findings": len(lint_findings), "language": language, "tool": tool_name},
                 )
             except Exception:
                 pass
         except Exception as e:
-            logger.warning("Ruff 检查失败", error=str(e))
+            logger.warning("静态检查失败", error=str(e))
 
         # 2. LLM 语义点评（补充静态工具漏报）
         try:
@@ -131,39 +142,61 @@ class CodeStyleAgent(BaseAgent):
         logger.info("规范扫描完成", path=project_path, findings=len(unique))
         return unique
 
-    def _run_ruff(
+    def _detect_language(self, path: Path) -> str:
+        """检测项目主要语言（与 security_agent 同构）"""
+        indicators = {
+            "python": ["*.py", "pyproject.toml", "setup.py", "requirements.txt"],
+            "typescript": ["*.ts", "*.tsx", "tsconfig.json"],
+            "javascript": ["*.js", "*.jsx", "package.json"],
+            "go": ["*.go", "go.mod"],
+        }
+        scores: dict[str, int] = {}
+        for lang, patterns in indicators.items():
+            count = 0
+            for pattern in patterns:
+                if "*" in pattern:
+                    count += len(list(path.rglob(pattern))[:100])
+                else:
+                    count += 1 if (path / pattern).exists() else 0
+            scores[lang] = count
+        if not scores or max(scores.values()) == 0:
+            return "default"
+        return max(scores, key=scores.get)
+
+    # ESLint 输出 severity 映射（ESLint 2=error 1=warning）
+    _ESLINT_SEVERITY = {2: "warning", 1: "suggestion"}
+
+    def _run_eslint(
         self,
         path: Path,
         file_paths: list[str] | None = None,
     ) -> list[dict[str, Any]]:
-        """运行 Ruff 静态检查"""
-        cmd = ["ruff", "check", "--output-format", "json", "--no-cache"]
+        """运行 ESLint（JS/TS 规范检查事实标准）
 
+        使用容器内全局安装的 eslint@9 + typescript-eslint；
+        目标项目无本地依赖也能跑（内置推荐规则集）。
+        """
+        cmd = ["eslint", "--format", "json", "--no-error-on-unmatched-pattern"]
+        targets = []
         if file_paths:
-            for fp in file_paths[:50]:
-                full = path / fp
-                if full.exists():
-                    cmd.append(str(full))
-        else:
-            cmd.append(str(path))
+            exts = {".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"}
+            targets = [str(path / fp) for fp in file_paths[:50]
+                       if (path / fp).exists() and (path / fp).suffix.lower() in exts]
+        if not targets:
+            targets = [str(path)]
+        cmd.extend(targets)
 
         try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=120,
-                cwd=str(path),
-            )
-        except subprocess.TimeoutExpired:
-            logger.warning("Ruff 超时")
-            return []
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=180, cwd=str(path))
         except FileNotFoundError:
-            logger.error("ruff 命令未找到")
+            logger.warning("eslint 命令未找到（镜像未安装 Node 工具链？），跳过 ESLint")
+            return []
+        except subprocess.TimeoutExpired:
+            logger.warning("ESLint 超时")
             return []
 
-        if result.returncode not in (0, 1):  # 0=无问题 1=有问题
-            logger.warning("Ruff 异常退出", code=result.returncode, stderr=result.stderr[:300])
+        if not result.stdout.strip():
+            logger.warning("ESLint 无输出", stderr=result.stderr[:200])
             return []
 
         try:
@@ -171,46 +204,63 @@ class CodeStyleAgent(BaseAgent):
         except json.JSONDecodeError:
             return []
 
-        return self._parse_results(path, data)
-
-    def _parse_results(self, path: Path, data: list) -> list[dict[str, Any]]:
-        """解析 Ruff JSON 输出"""
-        findings = []
-        for item in data:
-            rule_code = item.get("code", "")
-            line = item.get("location", {}).get("row")
-            file_path = item.get("filename", "")
-            message = item.get("message", "")
-            fixable = bool(item.get("fix"))
-            snippet = extract_code_snippet(path, file_path, line)
-
-            findings.append({
-                "rule_id": rule_code,
-                "severity": self._map_severity(rule_code),
-                "message": f"[{rule_code}] {message}" if rule_code else message,
-                "file_path": file_path,
-                "line_start": line,
-                "code_snippet": snippet[:500],
-                "suggestion": self._suggestion_for(rule_code, fixable),
-                "is_auto_fixable": fixable,
-                "fix_suggestion": self._suggestion_for(rule_code, fixable),
-            })
+        findings: list[dict[str, Any]] = []
+        for file_entry in data:
+            rel = str(Path(file_entry.get("filePath", "")).relative_to(path)) if file_entry.get("filePath", "").startswith(str(path)) else file_entry.get("filePath", "")
+            for msg in file_entry.get("messages", []):
+                rule = msg.get("ruleId") or "ESLINT"
+                findings.append({
+                    "rule_id": f"TS-{rule}" if rule != "ESLINT" else "TS-ESLINT",
+                    "severity": self._ESLINT_SEVERITY.get(msg.get("severity", 1), "suggestion"),
+                    "message": f"{msg.get('message', '')}（{rule}）",
+                    "file_path": rel,
+                    "line_start": msg.get("line"),
+                    "code_snippet": extract_code_snippet(str(path), rel, msg.get("line")),
+                    "suggestion": "",
+                })
         return findings
 
-    def _map_severity(self, rule_code: str) -> str:
-        """将 Ruff 规则代码映射为审查严重程度"""
-        if rule_code in RULE_SEVERITY:
-            return RULE_SEVERITY[rule_code]
-        for prefix, severity in RULE_SEVERITY.items():
-            if rule_code.startswith(prefix):
-                return severity
-        return DEFAULT_SEVERITY
+    # golangci-lint 输出 severity 映射
+    _GO_SEVERITY = {"error": "warning", "warning": "suggestion"}
 
-    def _suggestion_for(self, rule_code: str, fixable: bool) -> str:
-        """为 Ruff 规则生成修复建议"""
-        if fixable:
-            return f"Ruff 可自动修复（规则 {rule_code}），可运行 `ruff check --fix` 处理"
-        return f"参考 Ruff 规则 {rule_code} 的说明手工修复"
+    def _run_golangci_lint(self, path: Path) -> list[dict[str, Any]]:
+        """运行 golangci-lint（Go 官方推荐 meta-linter，聚合 govet/staticcheck 等）"""
+        cmd = ["golangci-lint", "run", "--output-format", "json", "--timeout", "3m"]
+
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=200, cwd=str(path))
+        except FileNotFoundError:
+            logger.warning("golangci-lint 命令未找到（镜像未安装？），跳过 Go 规范检查")
+            return []
+        except subprocess.TimeoutExpired:
+            logger.warning("golangci-lint 超时")
+            return []
+
+        # golangci-lint 有发现时退出码为 1，输出仍为合法 JSON
+        if not result.stdout.strip():
+            return []
+
+        try:
+            data = json.loads(result.stdout)
+        except json.JSONDecodeError:
+            return []
+
+        findings: list[dict[str, Any]] = []
+        for issue in data.get("Issues", []) or []:
+            rel = str(Path(issue.get("Pos", {}).get("Filename", "")).relative_to(path)) \
+                if issue.get("Pos", {}).get("Filename", "").startswith(str(path)) \
+                else issue.get("Pos", {}).get("Filename", "")
+            from_linter = issue.get("FromLinter", "govet")
+            findings.append({
+                "rule_id": f"GO-{from_linter}",
+                "severity": self._GO_SEVERITY.get(issue.get("Severity", "") or "warning", "suggestion"),
+                "message": f"{issue.get('Text', '')}（{from_linter}）",
+                "file_path": rel,
+                "line_start": issue.get("Pos", {}).get("Line"),
+                "code_snippet": extract_code_snippet(str(path), rel, issue.get("Pos", {}).get("Line")),
+                "suggestion": "",
+            })
+        return findings
 
     async def _run_llm_analysis(
         self,
