@@ -131,13 +131,19 @@ class ReviewFlow(Flow[ReviewState]):
             # 可观测性：事件桥接归属 + 工具内部埋点上下文（Semgrep 规则集 / 逐文件 LLM 分析）
             from app.services.crew_event_bridge import bind as bridge_bind
             from app.services.review_steps import current_review_ctx
+            # 并发安全：上下文引擎按项目缓存复用，经 ContextVar 随审查传递（6 Crew 共享一份索引）
+            from app.agents.context_enhancer import get_or_build_engine, set_current_engine, reset_current_engine
 
             if state.review_id:
                 bridge_bind(state.review_id, agent_name)
             ctx_token = None
+            engine_token = None
             if state.review_id:
                 ctx_token = current_review_ctx.set(
                     {"review_id": state.review_id, "agent_name": agent_name}
+                )
+                engine_token = set_current_engine(
+                    get_or_build_engine(state.project_path, state.file_paths)
                 )
             try:
                 crew = build_review_crew(
@@ -148,6 +154,8 @@ class ReviewFlow(Flow[ReviewState]):
             finally:
                 if ctx_token is not None:
                     current_review_ctx.reset(ctx_token)
+                if engine_token is not None:
+                    reset_current_engine(engine_token)
             findings = parse_crew_findings(result)
             state.findings_by_agent[agent_name] = findings
             duration_ms = int((time.monotonic() - agent_start) * 1000)

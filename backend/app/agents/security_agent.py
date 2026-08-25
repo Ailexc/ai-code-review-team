@@ -173,7 +173,7 @@ class SecurityAgent(BaseAgent):
         try:
             from app.agents.llm_client import get_active_llm_config, run_llm_analysis
             from app.agents.utils import collect_code_files_for_llm
-            from app.agents.context_enhancer import agent_context
+            from app.agents.context_enhancer import enhance_prompt
 
             config = await get_active_llm_config()
             if not config:
@@ -184,13 +184,11 @@ class SecurityAgent(BaseAgent):
             if not files:
                 return []
 
-            # 构建代码库上下文（增强审查质量）
-            agent_context.build(str(path), file_paths)
-
+            # 代码库上下文引擎由 ReviewFlow 统一构建并经 ContextVar 传入（并发安全）
             prompts = [
                 (
                     fp,
-                    agent_context.enhance_prompt(
+                    enhance_prompt(
                         fp,
                         SECURITY_PROMPT.format(file_path=fp, code_content=content),
                     ),
