@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Card, Tag, Button, message, Spin, Space, List, Typography, Alert, Descriptions, Dropdown, Modal, Timeline, Collapse, Tooltip } from 'antd';
 import {
@@ -10,6 +10,7 @@ import {
 import api from '@/api/index';
 import dayjs from 'dayjs';
 import { KNOWLEDGE_CARDS, INNER_CREW_CARD, AGGREGATE_CARD, GENERATE_REPORT_CARD, KnowledgeCard } from '@/constants/stepKnowledge';
+import { triggerApi } from '@/api/triggerApi';
 
 interface Finding {
   id: string;
@@ -97,6 +98,9 @@ export default function ReviewDetail() {
   const [llmLogOpen, setLlmLogOpen] = useState(false);
   const [llmLog, setLlmLog] = useState<LLMLog | null>(null);
   const [llmLogLoading, setLlmLogLoading] = useState(false);
+  const [liveSteps, setLiveSteps] = useState(false); // WS 实时订阅中
+  const wsRef = useRef<WebSocket | null>(null);
+  const refetchTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -114,6 +118,53 @@ export default function ReviewDetail() {
       .catch(() => message.error('获取审查详情失败'))
       .finally(() => setLoading(false));
   }, [id]);
+
+  // 审查运行中：订阅 WS，子步骤实时刷新（节流 800ms 合并多次事件为一次拉取）
+  useEffect(() => {
+    if (!id || !review || review.status !== 'running') return;
+    setLiveSteps(true);
+    const scheduleRefetch = () => {
+      if (refetchTimerRef.current != null) return;
+      refetchTimerRef.current = window.setTimeout(() => {
+        refetchTimerRef.current = null;
+        api.get(`/reviews/${id}/steps`)
+          .then((data) => setSteps(data as unknown as ReviewStep[]))
+          .catch(() => {});
+      }, 800);
+    };
+
+    let closed = false;
+    const ws = new WebSocket(triggerApi.reviewWsUrl(id));
+    wsRef.current = ws;
+    ws.onmessage = (e) => {
+      try {
+        const ev = JSON.parse(e.data);
+        if (ev.event === 'ping' || ev.event === 'connected') return;
+        scheduleRefetch();
+        if (ev.event === 'review_completed' || ev.event === 'review_failed') {
+          // 终态：补拉审查摘要后关闭订阅
+          setTimeout(() => {
+            api.get(`/reviews/${id}`).then((d) => setReview(d as unknown as Review)).catch(() => {});
+            api.get(`/reviews/${id}/steps`).then((data) => setSteps(data as unknown as ReviewStep[])).catch(() => {});
+            try { ws.close(); } catch { /* noop */ }
+          }, 500);
+        }
+      } catch { /* 忽略非 JSON 消息 */ }
+    };
+    ws.onerror = () => { /* 静默：详情页实时性非关键 */ };
+    ws.onclose = () => { if (!closed) setLiveSteps(false); };
+
+    return () => {
+      closed = true;
+      if (refetchTimerRef.current != null) {
+        window.clearTimeout(refetchTimerRef.current);
+        refetchTimerRef.current = null;
+      }
+      try { ws.close(); } catch { /* noop */ }
+      wsRef.current = null;
+      setLiveSteps(false);
+    };
+  }, [id, review?.status]);
 
   const handleDownloadReport = () => {
     if (!id) return;
@@ -385,7 +436,12 @@ export default function ReviewDetail() {
       <Card
         title="⚙️ 执行流程（外层 Flow + 内层 Crew，每一步做了什么、为什么）"
         style={{ marginBottom: 24 }}
-        extra={<Tag color="purple">可观测性 · 学习模式</Tag>}
+        extra={
+          <Space>
+            {liveSteps && <Tag color="processing" icon={<LoadingOutlined />}>实时跟踪中</Tag>}
+            <Tag color="purple">可观测性 · 学习模式</Tag>
+          </Space>
+        }
       >
         {steps.length === 0 ? (
           <Typography.Text type="secondary">
