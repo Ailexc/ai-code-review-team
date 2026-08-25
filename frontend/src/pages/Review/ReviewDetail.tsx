@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Card, Tag, Button, message, Spin, Space, List, Typography, Alert, Descriptions, Dropdown, Modal, Timeline } from 'antd';
+import { Card, Tag, Button, message, Spin, Space, List, Typography, Alert, Descriptions, Dropdown, Modal, Timeline, Collapse, Tooltip } from 'antd';
 import {
   ArrowLeftOutlined, ExclamationCircleOutlined, WarningOutlined, InfoCircleOutlined,
   DownloadOutlined, EyeOutlined, MoreOutlined, CheckCircleOutlined, UndoOutlined,
   ThunderboltOutlined, MinusCircleOutlined, LoadingOutlined,
+  RobotOutlined, ToolOutlined, FileTextOutlined, BulbOutlined, RightOutlined,
 } from '@ant-design/icons';
 import api from '@/api/index';
 import dayjs from 'dayjs';
+import { KNOWLEDGE_CARDS, INNER_CREW_CARD, AGGREGATE_CARD, GENERATE_REPORT_CARD, KnowledgeCard } from '@/constants/stepKnowledge';
 
 interface Finding {
   id: string;
@@ -67,6 +69,21 @@ const AGENT_LABELS: Record<string, string> = {
   git_review: 'Git 审查',
 };
 
+// LLM 调用全文档案
+interface LLMLog {
+  id: string;
+  agent_name: string | null;
+  source: string;
+  call_type: string | null;
+  model: string | null;
+  messages: { role: string; content: string }[] | null;
+  response: string | null;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  latency_ms: number | null;
+}
+
 export default function ReviewDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -77,6 +94,9 @@ export default function ReviewDetail() {
   const [autofixOpen, setAutofixOpen] = useState(false);
   const [autofixResult, setAutofixResult] = useState<Record<string, unknown> | null>(null);
   const [autofixLoading, setAutofixLoading] = useState(false);
+  const [llmLogOpen, setLlmLogOpen] = useState(false);
+  const [llmLog, setLlmLog] = useState<LLMLog | null>(null);
+  const [llmLogLoading, setLlmLogLoading] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -128,6 +148,21 @@ export default function ReviewDetail() {
       message.error('自动修复失败');
     } finally {
       setAutofixLoading(false);
+    }
+  };
+
+  const handleViewTranscript = async (transcriptId: string) => {
+    if (!id) return;
+    setLlmLogLoading(true);
+    setLlmLogOpen(true);
+    try {
+      const log = await api.get(`/reviews/${id}/llm-logs/${transcriptId}`) as unknown as LLMLog;
+      setLlmLog(log);
+    } catch {
+      message.error('获取 LLM 调用全文失败');
+      setLlmLogOpen(false);
+    } finally {
+      setLlmLogLoading(false);
     }
   };
 
@@ -184,6 +219,121 @@ export default function ReviewDetail() {
     return <Tag color="processing">进行中</Tag>;
   };
 
+  // ---- 深度可观测性：父子步骤树 + 知识卡片 + 全文档案 ----
+
+  const knowledgeFor = (s: ReviewStep): KnowledgeCard | null => {
+    if (s.phase === 'inner_crew') return INNER_CREW_CARD;
+    if (s.node_type === 'aggregate') return AGGREGATE_CARD;
+    if (s.node_type === 'generate_report') return GENERATE_REPORT_CARD;
+    return KNOWLEDGE_CARDS[s.node_type] || null;
+  };
+
+  /** 知识卡片（💡 为什么）+ 源码位置 */
+  const knowledgePanel = (s: ReviewStep) => {
+    const card = knowledgeFor(s);
+    if (!card) return null;
+    return (
+      <div style={{ marginTop: 6, padding: '8px 10px', background: '#f6f8fa', borderRadius: 6, border: '1px solid #e8e8e8' }}>
+        <div style={{ fontSize: 13, color: '#444' }}>
+          <BulbOutlined style={{ color: '#faad14', marginRight: 6 }} />
+          <Typography.Text type="secondary" strong>为什么：</Typography.Text>
+          {card.text}
+        </div>
+        {card.refs && card.refs.length > 0 && (
+          <div style={{ marginTop: 4, fontSize: 12, color: '#888' }}>
+            📂 源码：
+            {card.refs.map((r, i) => (
+              <Tooltip key={i} title={r.desc}>
+                <Typography.Text code copyable={false} style={{ marginRight: 8, fontSize: 12 }}>
+                  {r.file}{r.line ? `:${r.line}` : ''}
+                </Typography.Text>
+              </Tooltip>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  /** detail 字段 → 小标签（tokens / 规则集统计 / 缓存等） */
+  const detailChips = (detail: Record<string, unknown> | null) => {
+    if (!detail) return null;
+    const chips: React.ReactNode[] = [];
+    const pt = detail.prompt_tokens as number | undefined;
+    const ct = detail.completion_tokens as number | undefined;
+    if (pt != null || ct != null) {
+      chips.push(<Tag key="tok" color="geekblue">tokens {pt ?? 0}+{ct ?? 0}</Tag>);
+    }
+    if (detail.model) chips.push(<Tag key="model">{String(detail.model)}</Tag>);
+    if (detail.from_cache === true) chips.push(<Tag key="cache" color="orange">命中缓存</Tag>);
+    if (typeof detail.findings === 'number') chips.push(<Tag key="f" color="cyan">发现 {detail.findings}</Tag>);
+    if (typeof detail.ruleset === 'string') {
+      chips.push(<Tag key="rs" title={String(detail.ruleset)}>{String(detail.ruleset).split('/').slice(-2).join('/')}</Tag>);
+    }
+    if (typeof detail.tool_name === 'string') chips.push(<Tag key="tn" color="purple">{detail.tool_name}</Tag>);
+    return chips.length > 0 ? <div style={{ marginTop: 2 }}>{chips}</div> : null;
+  };
+
+  /** 子步骤行（tool / llm 粒度） */
+  const childStepRow = (c: ReviewStep) => {
+    const isLlm = c.phase === 'llm';
+    const transcriptId = (c.detail?.transcript_id as string | undefined);
+    return (
+      <div key={c.id} style={{ display: 'flex', gap: 8, padding: '5px 0', borderBottom: '1px dashed #f0f0f0' }}>
+        <span style={{ color: isLlm ? '#722ed1' : '#13c2c2', flexShrink: 0, paddingTop: 1 }}>
+          {isLlm ? <RobotOutlined /> : <ToolOutlined />}
+        </span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div>
+            {c.action_text}
+            {c.duration_ms != null && (
+              <Typography.Text type="secondary" style={{ marginLeft: 6, fontSize: 12 }}>
+                {c.duration_ms >= 1000 ? `${(c.duration_ms / 1000).toFixed(1)}s` : `${c.duration_ms}ms`}
+              </Typography.Text>
+            )}
+            {c.status === 'failed' && <Tag color="red" style={{ marginLeft: 6 }}>失败</Tag>}
+          </div>
+          {detailChips(c.detail)}
+          {isLlm && transcriptId && (
+            <Button
+              type="link"
+              size="small"
+              icon={<FileTextOutlined />}
+              style={{ padding: 0, marginRight: 12 }}
+              onClick={() => handleViewTranscript(transcriptId)}
+            >
+              查看全文（提示词/响应原文）
+            </Button>
+          )}
+          {knowledgePanel(c)}
+        </div>
+      </div>
+    );
+  };
+
+  /** 耗时占比条（相对最耗时父步骤） */
+  const durationBar = (s: ReviewStep, maxDur: number) => {
+    if (!s.duration_ms || maxDur <= 0 || s.status === 'skipped') return null;
+    const pct = Math.max(2, Math.round((s.duration_ms / maxDur) * 100));
+    return (
+      <Tooltip title={`占最耗时步骤的 ${pct}%`}>
+        <div style={{ height: 4, background: '#f0f0f0', borderRadius: 2, marginTop: 4, width: '60%' }}>
+          <div style={{ height: 4, width: `${pct}%`, background: s.phase === 'inner_crew' ? '#722ed1' : '#1677ff', borderRadius: 2 }} />
+        </div>
+      </Tooltip>
+    );
+  };
+
+  // 组装父子树：父 = outer_flow / inner_crew；子 = tool / llm（按 agent_name 归属到内层 Crew）
+  const parentSteps = steps.filter((s) => s.phase === 'outer_flow' || s.phase === 'inner_crew');
+  const childSteps = steps.filter((s) => s.phase === 'tool' || s.phase === 'llm');
+  const childrenByAgent: Record<string, ReviewStep[]> = {};
+  for (const c of childSteps) {
+    const key = c.agent_name || '_unknown_';
+    (childrenByAgent[key] ||= []).push(c);
+  }
+  const maxParentDur = Math.max(...parentSteps.map((s) => s.duration_ms || 0), 0);
+
   return (
     <div>
       <Space style={{ marginBottom: 16 }}>
@@ -233,9 +383,9 @@ export default function ReviewDetail() {
       )}
 
       <Card
-        title="⚙️ 执行流程（外层 Flow + 内层 Crew，每一步做了什么）"
+        title="⚙️ 执行流程（外层 Flow + 内层 Crew，每一步做了什么、为什么）"
         style={{ marginBottom: 24 }}
-        extra={<Tag color="purple">可观测性</Tag>}
+        extra={<Tag color="purple">可观测性 · 学习模式</Tag>}
       >
         {steps.length === 0 ? (
           <Typography.Text type="secondary">
@@ -243,37 +393,107 @@ export default function ReviewDetail() {
           </Typography.Text>
         ) : (
           <Timeline
-            items={steps.map((s) => ({
-              dot: stepIcon(s.status),
-              children: (
-                <div key={s.id} style={{ marginBottom: 4 }}>
-                  <Space style={{ marginBottom: 4 }} wrap>
-                    {s.phase === 'inner_crew' ? (
-                      <Tag color="purple">内层 Crew</Tag>
-                    ) : (
-                      <Tag color="blue">外层 Flow</Tag>
+            items={parentSteps.map((s) => {
+              const children = s.agent_name ? (childrenByAgent[s.agent_name] || []) : [];
+              return {
+                dot: stepIcon(s.status),
+                children: (
+                  <div key={s.id} style={{ marginBottom: 4 }}>
+                    <Space style={{ marginBottom: 4 }} wrap>
+                      {s.phase === 'inner_crew' ? (
+                        <Tag color="purple">内层 Crew</Tag>
+                      ) : (
+                        <Tag color="blue">外层 Flow</Tag>
+                      )}
+                      <Typography.Text strong>{stepTitle(s)}</Typography.Text>
+                      {stepStatusTag(s)}
+                      {s.duration_ms != null && (
+                        <Typography.Text type="secondary">
+                          {(s.duration_ms / 1000).toFixed(1)}s
+                        </Typography.Text>
+                      )}
+                    </Space>
+                    <div style={{ marginBottom: 2 }}>{s.action_text}</div>
+                    {s.output_summary && (
+                      <div style={{ color: '#666', fontSize: 13 }}>📤 产出：{s.output_summary}</div>
                     )}
-                    <Typography.Text strong>{stepTitle(s)}</Typography.Text>
-                    {stepStatusTag(s)}
-                    {s.duration_ms != null && (
-                      <Typography.Text type="secondary">
-                        {(s.duration_ms / 1000).toFixed(1)}s
-                      </Typography.Text>
+                    {s.input_summary && (
+                      <div style={{ color: '#999', fontSize: 12 }}>📥 输入：{s.input_summary}</div>
                     )}
-                  </Space>
-                  <div style={{ marginBottom: 2 }}>{s.action_text}</div>
-                  {s.output_summary && (
-                    <div style={{ color: '#666', fontSize: 13 }}>📤 产出：{s.output_summary}</div>
-                  )}
-                  {s.input_summary && (
-                    <div style={{ color: '#999', fontSize: 12 }}>📥 输入：{s.input_summary}</div>
-                  )}
-                </div>
-              ),
-            }))}
+                    {durationBar(s, maxParentDur)}
+                    {knowledgePanel(s)}
+
+                    {/* 子步骤：默认折叠，展开看模型调用 / 工具内部细节 */}
+                    {children.length > 0 && (
+                      <Collapse
+                        ghost
+                        size="small"
+                        style={{ marginTop: 4, marginLeft: -12 }}
+                        items={[{
+                          key: s.id,
+                          label: (
+                            <span style={{ fontSize: 13, color: '#555' }}>
+                              <RightOutlined style={{ fontSize: 10 }} /> 执行细节（{children.length} 条：模型调用 / 工具内部动作）
+                            </span>
+                          ),
+                          children: <div>{children.map(childStepRow)}</div>,
+                        }]}
+                      />
+                    )}
+                  </div>
+                ),
+              };
+            })}
           />
         )}
       </Card>
+
+      {/* LLM 调用全文档案 */}
+      <Modal
+        title={
+          llmLog ? (
+            <Space>
+              <RobotOutlined style={{ color: '#722ed1' }} />
+              LLM 调用全文 · {llmLog.model || '?'} · {llmLog.total_tokens} tokens · {llmLog.latency_ms != null ? `${(llmLog.latency_ms / 1000).toFixed(1)}s` : '-'}
+            </Space>
+          ) : 'LLM 调用全文'
+        }
+        open={llmLogOpen}
+        onCancel={() => setLlmLogOpen(false)}
+        footer={null}
+        width={860}
+      >
+        {llmLogLoading || !llmLog ? (
+          <Spin style={{ display: 'block', margin: '40px auto' }} />
+        ) : (
+          <div style={{ maxHeight: '65vh', overflow: 'auto' }}>
+            {(llmLog.messages || []).map((m, i) => (
+              <div key={i} style={{ marginBottom: 12 }}>
+                <Tag color={m.role === 'system' ? 'orange' : m.role === 'user' ? 'blue' : m.role === 'assistant' ? 'green' : 'default'}>
+                  {m.role}
+                </Tag>
+                <pre style={{
+                  background: '#1e1e1e', color: '#d4d4d4', padding: 12, borderRadius: 6,
+                  fontSize: 12, whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: '6px 0 0',
+                }}>
+                  {m.content}
+                </pre>
+              </div>
+            ))}
+            {llmLog.response && (
+              <div style={{ marginBottom: 12 }}>
+                <Tag color="green">assistant（响应原文）</Tag>
+                <pre style={{
+                  background: '#1e1e1e', color: '#d4d4d4', padding: 12, borderRadius: 6,
+                  fontSize: 12, whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: '6px 0 0',
+                }}>
+                  {llmLog.response}
+                </pre>
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
 
       <Card title={`发现列表 (${findings.length})`}>
         <List
