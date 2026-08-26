@@ -224,8 +224,20 @@ class CodeStyleAgent(BaseAgent):
     _GO_SEVERITY = {"error": "warning", "warning": "suggestion"}
 
     def _run_golangci_lint(self, path: Path) -> list[dict[str, Any]]:
-        """运行 golangci-lint（Go 官方推荐 meta-linter，聚合 govet/staticcheck 等）"""
-        cmd = ["golangci-lint", "run", "--output-format", "json", "--timeout", "3m"]
+        """运行 golangci-lint（Go 官方推荐 meta-linter，聚合 govet/staticcheck 等）
+
+        注意：v1.61 的 flag 是 --out-format（不是 --output-format）；
+        --no-config + enable-only 固定核心 linter 集合，结果确定、速度快，
+        且不受目标项目自带 .golangci.yml 干扰。
+        运行时依赖容器内 Go 工具链（类型检查需要），缺失时优雅跳过。
+        """
+        cmd = [
+            "golangci-lint", "run",
+            "--out-format", "json",
+            "--timeout", "3m",
+            "--no-config",
+            "--enable-only=errcheck,govet,ineffassign,staticcheck,gosimple,unused",
+        ]
 
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=200, cwd=str(path))
