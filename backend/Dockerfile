@@ -53,7 +53,7 @@ RUN (git clone --depth 1 --filter=blob:none --sparse \
 ARG GOLANGCI_LINT_VERSION=v1.61.0
 ARG OSV_SCANNER_VERSION=v1.9.2
 ARG GO_VERSION=1.23.4
-ENV PATH="/usr/local/go/bin:${PATH}" \
+ENV PATH="/usr/local/go/bin:/root/go/bin:${PATH}" \
     GOPROXY="https://goproxy.cn,direct"
 RUN npm install -g eslint@9 typescript @typescript-eslint/parser @typescript-eslint/eslint-plugin \
     && curl -sSfL -o /tmp/go.tgz "https://golang.google.cn/dl/go${GO_VERSION}.linux-amd64.tar.gz" \
