@@ -21,9 +21,10 @@ const menuItems = [
   { key: '/trigger', icon: <ThunderboltOutlined />, label: '触发审查' },
   { key: '/reviews', icon: <FileSearchOutlined />, label: '审查记录' },
   { key: '/settings/models', icon: <SettingOutlined />, label: '模型配置' },
-  { key: '/docs', icon: <BookOutlined />, label: '系统文档' },
   { key: '/rules', icon: <SafetyCertificateOutlined />, label: '审查规则' },
   { key: '/semantic-diff', icon: <DiffOutlined />, label: '语义Diff' },
+  { type: 'divider' },
+  { key: '/docs', icon: <BookOutlined />, label: '系统文档' },
 ];
 
 export default function MainLayout() {
