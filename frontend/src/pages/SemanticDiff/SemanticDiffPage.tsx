@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Card, Select, Button, message, Space, Tag, Typography, Table, Alert, Spin, Collapse, Empty } from 'antd';
-import { DiffOutlined, ReloadOutlined, BulbOutlined } from '@ant-design/icons';
+import { DiffOutlined, ReloadOutlined, BulbOutlined, RobotOutlined } from '@ant-design/icons';
 import api from '@/api/index';
 import { projectApi, Project } from '@/api/projectApi';
 
@@ -127,10 +127,13 @@ export default function SemanticDiffPage() {
 
   return (
     <div>
-      <h1><DiffOutlined /> 语义 Diff 分析</h1>
-      <Typography.Paragraph type="secondary" style={{ marginBottom: 24 }}>
-        分析 Git 变更的结构化影响（AST 级 diff + 调用图影响 + LLM 意图分析），理解变更的目的和跨文件影响。
-      </Typography.Paragraph>
+      <div className="page-header">
+        <div className="page-header-icon"><DiffOutlined /></div>
+        <div className="page-header-body">
+          <h1 className="page-header-title">语义 Diff 分析</h1>
+          <p className="page-header-subtitle">分析 Git 变更的结构化影响（AST 级 diff + 调用图影响 + LLM 意图分析），理解变更的目的和跨文件影响。</p>
+        </div>
+      </div>
 
       <Card style={{ marginBottom: 16 }}>
         <Space>
@@ -201,7 +204,7 @@ export default function SemanticDiffPage() {
 
       {/* LLM 意图分析结果 */}
       {intent && (
-        <Card title="🤖 LLM 变更意图分析" style={{ marginTop: 16 }}>
+        <Card title={<Space size={8}><RobotOutlined style={{ color: '#7c3aed' }} />LLM 变更意图分析</Space>} style={{ marginTop: 16 }}>
           <Alert
             type="info"
             message={intent.summary || '变更意图分析'}
@@ -213,7 +216,7 @@ export default function SemanticDiffPage() {
               style={{ marginBottom: 16 }}
               items={[{
                 key: 'risks',
-                label: `⚠️ 风险 (${intent.risks.length})`,
+                label: `风险 (${intent.risks.length})`,
                 children: (
                   <Space direction="vertical" style={{ width: '100%' }}>
                     {intent.risks.map((r, i) => (
@@ -233,7 +236,7 @@ export default function SemanticDiffPage() {
             <Collapse
               items={[{
                 key: 'missing',
-                label: `🔍 可能遗漏的配套修改 (${intent.missing_changes.length})`,
+                label: `可能遗漏的配套修改 (${intent.missing_changes.length})`,
                 children: (
                   <Space direction="vertical" style={{ width: '100%' }}>
                     {intent.missing_changes.map((m, i) => (

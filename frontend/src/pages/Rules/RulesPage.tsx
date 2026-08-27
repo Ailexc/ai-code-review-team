@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Card, Table, Tag, Button, message, Space, Switch, Popconfirm, Typography } from 'antd';
-import { ReloadOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { ReloadOutlined, ThunderboltOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
 import api from '@/api/index';
 
 interface Rule {
@@ -126,20 +126,19 @@ export default function RulesPage() {
   ];
 
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-        <div>
-          <h1 style={{ margin: 0 }}>审查规则</h1>
-          <Typography.Text type="secondary">
-            从历史审查记录中自动学习的团队规范，结合用户反馈动态调整权重
-          </Typography.Text>
+    <div className="page-container">
+      <div className="page-header">
+        <div className="page-header-icon"><SafetyCertificateOutlined /></div>
+        <div className="page-header-body">
+          <h1 className="page-header-title">审查规则</h1>
+          <p className="page-header-subtitle">从历史审查记录中自动学习的团队规范，结合用户反馈动态调整权重。</p>
         </div>
-        <Space>
+        <div className="page-header-actions">
           <Button icon={<ThunderboltOutlined />} loading={mining} onClick={handleMine}>
             从历史挖掘规则
           </Button>
           <Button icon={<ReloadOutlined />} onClick={fetchRules}>刷新</Button>
-        </Space>
+        </div>
       </div>
 
       <Card>

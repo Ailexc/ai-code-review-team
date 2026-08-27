@@ -3,7 +3,7 @@ import { Card, Button, Upload, Input, message, List, Space, Typography, Row, Col
 import {
   UploadOutlined, FolderOpenOutlined, FileTextOutlined, PlayCircleOutlined,
   SafetyOutlined, CodeOutlined, ExperimentOutlined, BugOutlined,
-  ThunderboltOutlined, StarFilled, BranchesOutlined, BookOutlined,
+  ThunderboltOutlined, StarFilled, BranchesOutlined, BookOutlined, BulbOutlined,
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { triggerApi, TriggerResult } from '@/api/triggerApi';
@@ -167,15 +167,18 @@ export default function ReviewTrigger() {
 
   return (
     <div>
-      <h1>审查能力中心</h1>
-      <Typography.Paragraph type="secondary" style={{ marginBottom: 24, fontSize: 15 }}>
-        选择一种审查能力，了解它的检测维度和实现原理，然后选择项目和触发方式开始审查。
-      </Typography.Paragraph>
+      <div className="page-header">
+        <div className="page-header-icon"><ThunderboltOutlined /></div>
+        <div className="page-header-body">
+          <h1 className="page-header-title">审查能力中心</h1>
+          <p className="page-header-subtitle">选择一种审查能力，了解它的检测维度和实现原理，然后选择项目和触发方式开始审查。</p>
+        </div>
+      </div>
 
       {/* 学习/演示引导：双层架构观察 */}
-      <Card size="small" style={{ marginBottom: 16, background: '#f6ffed', borderColor: '#b7eb8f' }}>
+      <Card size="small" style={{ marginBottom: 16, background: 'linear-gradient(135deg, rgba(16,185,129,0.07), rgba(59,130,246,0.04))', borderColor: 'rgba(16,185,129,0.28)' }}>
         <Space direction="vertical" size={2}>
-          <Typography.Text strong>🎓 学习观察（真实执行，非模拟）：</Typography.Text>
+          <Typography.Text strong><BulbOutlined style={{ color: '#10b981', marginRight: 8 }} />学习观察（真实执行，非模拟）：</Typography.Text>
           <Typography.Text type="secondary" style={{ fontSize: 13 }}>
             选择<strong>单个 Agent</strong>（安全/规范/依赖等）触发，即为<strong>快速演示模式</strong>——用真实 LLM + 真实工具完整跑通
             「外层 Flow（解析 → 并行 Crew → 聚合 → 报告）+ 内层 Crew（Agent 自主调用工具）」双层架构，实时观察每个节点流转。
@@ -208,8 +211,8 @@ export default function ReviewTrigger() {
             value={orchestrationMode}
             onChange={(v) => setOrchestrationMode(v as 'parallel' | 'hierarchical')}
             options={[
-              { value: 'parallel', label: '⚡ 并行模式（默认）' },
-              { value: 'hierarchical', label: '🎯 派发模式（实验）' },
+              { value: 'parallel', label: '并行模式（默认）' },
+              { value: 'hierarchical', label: '派发模式（实验）' },
             ]}
           />
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
@@ -268,7 +271,7 @@ export default function ReviewTrigger() {
 
       {/* 触发区域 */}
       <Card
-        title={<Space><span style={{ color: cap.color }}>{cap.icon}</span>🚀 选择项目并触发 {cap.title}</Space>}
+        title={<Space><span style={{ color: cap.color }}>{cap.icon}</span>选择项目并触发 {cap.title}</Space>}
         style={{ marginBottom: 16 }}
       >
         <Space direction="vertical" style={{ width: '100%' }} size="middle">

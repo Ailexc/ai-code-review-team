@@ -6,6 +6,7 @@ import {
   DownloadOutlined, EyeOutlined, MoreOutlined, CheckCircleOutlined, UndoOutlined,
   ThunderboltOutlined, MinusCircleOutlined, LoadingOutlined,
   RobotOutlined, ToolOutlined, FileTextOutlined, BulbOutlined, RightOutlined,
+  ApartmentOutlined, FileSearchOutlined, ExportOutlined, ImportOutlined, FolderOutlined,
 } from '@ant-design/icons';
 import api from '@/api/index';
 import dayjs from 'dayjs';
@@ -294,7 +295,7 @@ export default function ReviewDetail() {
         </div>
         {card.refs && card.refs.length > 0 && (
           <div style={{ marginTop: 4, fontSize: 12, color: '#888' }}>
-            📂 源码：
+            <FolderOutlined style={{ marginRight: 6, fontSize: 12 }} />源码：
             {card.refs.map((r, i) => (
               <Tooltip key={i} title={r.desc}>
                 <Typography.Text code copyable={false} style={{ marginRight: 8, fontSize: 12 }}>
@@ -389,17 +390,16 @@ export default function ReviewDetail() {
 
   return (
     <div>
-      <Space style={{ marginBottom: 16 }}>
-        <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/reviews')}>返回列表</Button>
-      </Space>
-
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-        <h1>审查详情</h1>
-        <Space>
+      <div className="page-header">
+        <div className="page-header-body">
+          <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate('/reviews')} style={{ marginBottom: 6, paddingLeft: 0 }}>返回列表</Button>
+          <h1 className="page-header-title">审查详情</h1>
+        </div>
+        <div className="page-header-actions">
           <Button icon={<ThunderboltOutlined />} onClick={() => setAutofixOpen(true)}>自动修复</Button>
           <Button icon={<EyeOutlined />} onClick={handleViewHtmlReport}>HTML报告</Button>
           <Button icon={<DownloadOutlined />} onClick={handleDownloadReport}>下载报告</Button>
-        </Space>
+        </div>
       </div>
 
       <Descriptions bordered column={2} style={{ marginBottom: 24 }}>
@@ -410,7 +410,7 @@ export default function ReviewDetail() {
         <Descriptions.Item label="审查类型"><Tag color="blue">{review.review_type}</Tag></Descriptions.Item>
         <Descriptions.Item label="编排模式">
           <Tag color={review.orchestration_mode === 'hierarchical' ? 'magenta' : 'cyan'}>
-            {review.orchestration_mode === 'hierarchical' ? '🎯 派发模式' : '⚡ 并行模式'}
+            {review.orchestration_mode === 'hierarchical' ? '派发模式' : '并行模式'}
           </Tag>
         </Descriptions.Item>
         <Descriptions.Item label="状态">
@@ -440,7 +440,7 @@ export default function ReviewDetail() {
       )}
 
       <Card
-        title="⚙️ 执行流程（外层 Flow + 内层 Crew，每一步做了什么、为什么）"
+        title={<Space size={8}><ApartmentOutlined style={{ color: '#4f46e5' }} />执行流程（外层 Flow + 内层 Crew，每一步做了什么、为什么）</Space>}
         style={{ marginBottom: 24 }}
         extra={
           <Space>
@@ -477,10 +477,10 @@ export default function ReviewDetail() {
                     </Space>
                     <div style={{ marginBottom: 2 }}>{s.action_text}</div>
                     {s.output_summary && (
-                      <div style={{ color: '#666', fontSize: 13 }}>📤 产出：{s.output_summary}</div>
+                      <div style={{ color: '#666', fontSize: 13 }}><ExportOutlined style={{ marginRight: 6, fontSize: 12 }} />产出：{s.output_summary}</div>
                     )}
                     {s.input_summary && (
-                      <div style={{ color: '#999', fontSize: 12 }}>📥 输入：{s.input_summary}</div>
+                      <div style={{ color: '#999', fontSize: 12 }}><ImportOutlined style={{ marginRight: 6, fontSize: 11 }} />输入：{s.input_summary}</div>
                     )}
                     {durationBar(s, maxParentDur)}
                     {knowledgePanel(s)}

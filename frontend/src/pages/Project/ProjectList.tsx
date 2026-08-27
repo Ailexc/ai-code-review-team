@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Table, Button, Space, Tag, Modal, Form, Input, Select, message, Popconfirm, Row, Col } from 'antd';
-import { PlusOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
+import { PlusOutlined, ReloadOutlined, SearchOutlined, ProjectOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { projectApi, Project, ProjectCreate } from '@/api/projectApi';
 import dayjs from 'dayjs';
@@ -129,13 +129,17 @@ export default function ProjectList() {
   ];
 
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-        <h1>项目管理</h1>
-        <Space>
+    <div className="page-container">
+      <div className="page-header">
+        <div className="page-header-icon"><ProjectOutlined /></div>
+        <div className="page-header-body">
+          <h1 className="page-header-title">项目管理</h1>
+          <p className="page-header-subtitle">管理代码审查项目，配置路径、语言与 Git 远程仓库。</p>
+        </div>
+        <div className="page-header-actions">
           <Button icon={<ReloadOutlined />} onClick={() => fetchProjects()}>刷新</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>新建项目</Button>
-        </Space>
+        </div>
       </div>
 
       <Row gutter={16} style={{ marginBottom: 16 }}>
