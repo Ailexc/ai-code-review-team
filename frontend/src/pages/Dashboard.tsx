@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Row, Col, Card, Statistic, Tag, Empty, Typography, Progress, Table } from 'antd';
+import { Row, Col, Card, Statistic, Tag, Empty, Typography, Progress, Table, Space } from 'antd';
 import {
   ProjectOutlined,
   BugOutlined,
@@ -12,6 +12,12 @@ import {
   BranchesOutlined,
   ClockCircleOutlined,
   RobotOutlined,
+  ApartmentOutlined,
+  OrderedListOutlined,
+  FileDoneOutlined,
+  DashboardOutlined,
+  LineChartOutlined,
+  PieChartOutlined,
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, CartesianGrid } from 'recharts';
@@ -241,28 +247,31 @@ export default function Dashboard() {
   ];
 
   return (
-    <div>
-      <h1>仪表盘</h1>
-      <Typography.Paragraph type="secondary" style={{ marginBottom: 24 }}>
-        多 Agent 协作代码审查系统 — 系统概览与运行状态
-      </Typography.Paragraph>
+    <div className="page-container">
+      <div className="page-header">
+        <div className="page-header-icon"><DashboardOutlined /></div>
+        <div className="page-header-body">
+          <h1 className="page-header-title">仪表盘</h1>
+          <p className="page-header-subtitle">多 Agent 协作代码审查系统 — 系统概览与运行状态</p>
+        </div>
+      </div>
 
       {/* 1. 系统能力概览 */}
-      <Card title="🤖 系统能力概览" style={{ marginBottom: 24 }} size="small">
-        <Row gutter={[12, 12]}>
+      <Card title={<Space size={8}><ApartmentOutlined style={{ color: '#4f46e5' }} />系统能力概览</Space>} style={{ marginBottom: 24 }} size="small">
+        <Row gutter={[16, 16]}>
           {[
-            { name: '安全审查', icon: <SafetyOutlined />, color: '#ff4d4f', tool: 'Semgrep + LLM' },
-            { name: '规范审查', icon: <CodeOutlined />, color: '#faad14', tool: 'Ruff + LLM' },
-            { name: '依赖审查', icon: <ExperimentOutlined />, color: '#1677ff', tool: 'pip-audit' },
-            { name: '测试覆盖', icon: <BugOutlined />, color: '#52c41a', tool: 'AST + LLM' },
-            { name: '性能分析', icon: <ThunderboltOutlined />, color: '#722ed1', tool: 'AST + LLM' },
-            { name: 'Git 审查', icon: <BranchesOutlined />, color: '#13c2c2', tool: 'GitPython + LLM' },
+            { name: '安全审查', icon: <SafetyOutlined />, color: '#f43f5e', tool: 'Semgrep + LLM' },
+            { name: '规范审查', icon: <CodeOutlined />, color: '#f59e0b', tool: 'Ruff + LLM' },
+            { name: '依赖审查', icon: <ExperimentOutlined />, color: '#3b82f6', tool: 'pip-audit' },
+            { name: '测试覆盖', icon: <BugOutlined />, color: '#10b981', tool: 'AST + LLM' },
+            { name: '性能分析', icon: <ThunderboltOutlined />, color: '#8b5cf6', tool: 'AST + LLM' },
+            { name: 'Git 审查', icon: <BranchesOutlined />, color: '#14b8a6', tool: 'GitPython + LLM' },
           ].map(a => (
             <Col xs={12} sm={8} md={4} key={a.name}>
-              <div style={{ textAlign: 'center', padding: 8, borderRadius: 8, border: `1px solid ${a.color}20`, background: `${a.color}08` }}>
-                <div style={{ color: a.color, fontSize: 20, marginBottom: 4 }}>{a.icon}</div>
-                <div style={{ fontWeight: 500, fontSize: 13 }}>{a.name}</div>
-                <div style={{ fontSize: 11, color: '#999' }}>{a.tool}</div>
+              <div className="cap-card">
+                <div className="cap-card-icon" style={{ background: `${a.color}14`, color: a.color }}>{a.icon}</div>
+                <div className="cap-card-name">{a.name}</div>
+                <div className="cap-card-tool">{a.tool}</div>
               </div>
             </Col>
           ))}
@@ -272,7 +281,7 @@ export default function Dashboard() {
       {/* 2. 统计卡片 */}
       <Row gutter={[16, 16]}>
         <Col xs={24} sm={12} lg={6}>
-          <Card>
+          <Card className="stat-card">
             <Statistic
               title="项目总数"
               value={stats?.projects_total ?? 0}
@@ -281,7 +290,7 @@ export default function Dashboard() {
           </Card>
         </Col>
         <Col xs={24} sm={12} lg={6}>
-          <Card>
+          <Card className="stat-card">
             <Statistic
               title="审查任务"
               value={stats?.reviews_total ?? 0}
@@ -290,7 +299,7 @@ export default function Dashboard() {
           </Card>
         </Col>
         <Col xs={24} sm={12} lg={6}>
-          <Card>
+          <Card className="stat-card">
             <Statistic
               title="发现问题"
               value={stats?.findings_total ?? 0}
@@ -300,7 +309,7 @@ export default function Dashboard() {
           </Card>
         </Col>
         <Col xs={24} sm={12} lg={6}>
-          <Card>
+          <Card className="stat-card">
             <Statistic
               title="已解决"
               value={stats?.findings_fixed ?? 0}
@@ -312,7 +321,7 @@ export default function Dashboard() {
       </Row>
 
       {/* 3. 项目健康度（按项目柱状图，占一行） */}
-      <Card title="🏥 项目健康度" size="small" style={{ marginTop: 24 }}>
+      <Card title={<Space size={8}><LineChartOutlined style={{ color: '#10b981' }} />项目健康度</Space>} size="small" style={{ marginTop: 24 }}>
         {projectHealthData.length ? (
           <ResponsiveContainer width="100%" height={260}>
             <BarChart data={projectHealthData}>
@@ -335,7 +344,7 @@ export default function Dashboard() {
       {/* 4. 两个饼图占一行 */}
       <Row gutter={[16, 16]} style={{ marginTop: 24 }}>
         <Col xs={24} md={12}>
-          <Card title="🎯 严重程度分布" size="small">
+          <Card title={<Space size={8}><PieChartOutlined style={{ color: '#f43f5e' }} />严重程度分布</Space>} size="small">
             {severityPieData.length > 0 ? (
               <ResponsiveContainer width="100%" height={220}>
                 <PieChart>
@@ -354,7 +363,7 @@ export default function Dashboard() {
           </Card>
         </Col>
         <Col xs={24} md={12}>
-          <Card title="📋 处理状态分布" size="small">
+          <Card title={<Space size={8}><OrderedListOutlined style={{ color: '#3b82f6' }} />处理状态分布</Space>} size="small">
             {statusPieData.length > 0 ? (
               <ResponsiveContainer width="100%" height={220}>
                 <PieChart>
@@ -375,7 +384,7 @@ export default function Dashboard() {
       </Row>
 
       {/* 5. 运行时指标（占一行，用好看的卡片） */}
-      <Card title={<><ThunderboltOutlined /> 运行时指标</>} size="small" style={{ marginTop: 24 }}>
+      <Card title={<Space size={8}><ThunderboltOutlined style={{ color: '#8b5cf6' }} />运行时指标</Space>} size="small" style={{ marginTop: 24 }}>
         {metrics ? (
           <Row gutter={[24, 24]}>
             {/* 审查类型分布 */}
@@ -453,7 +462,7 @@ export default function Dashboard() {
       </Card>
 
       {/* 6. 最近审查记录（表格展示，占一行） */}
-      <Card title="📄 最近审查记录" size="small" style={{ marginTop: 24 }}>
+      <Card title={<Space size={8}><FileDoneOutlined style={{ color: '#4f46e5' }} />最近审查记录</Space>} size="small" style={{ marginTop: 24 }}>
         <Table
           dataSource={stats?.recent_reviews || []}
           columns={reviewColumns}
