@@ -135,6 +135,34 @@ export default function SemanticDiffPage() {
         </div>
       </div>
 
+      {/* 知识卡片：语义 Diff 是什么 */}
+      <Collapse
+        className="knowledge-collapse"
+        items={[{
+          key: 'about',
+          label: (
+            <span>
+              <BulbOutlined className="knowledge-icon" />
+              <span className="knowledge-title">语义 Diff 是什么？</span>
+              <span className="knowledge-hint">点击展开了解这个板块的用途</span>
+            </span>
+          ),
+          children: (
+            <div className="knowledge-body">
+              <p className="knowledge-lead">
+                语义 Diff 不只是告诉你「哪些行变了」，而是看懂「代码结构变了什么、影响了谁、为什么要这么改」。
+              </p>
+              <ul className="knowledge-list">
+                <li><strong>① AST 级 diff：</strong>识别函数 / 类级别的结构化变更（新增 / 修改 / 删除 / 重构），而不是粗糙的文本行 diff。</li>
+                <li><strong>② 调用图影响：</strong>基于全项目代码索引，分析变更的函数被哪些调用方引用、在哪些文件哪些行——发现跨文件的连锁影响。</li>
+                <li><strong>③ LLM 意图分析：</strong>让 LLM 总结这次变更的意图、风险等级，以及可能遗漏的配套修改。</li>
+              </ul>
+              <p className="knowledge-tip">适合在评审 PR 前使用，提前发现行级 diff 看不出的隐患。</p>
+            </div>
+          ),
+        }]}
+      />
+
       <Card style={{ marginBottom: 16 }}>
         <Space>
           <Select
