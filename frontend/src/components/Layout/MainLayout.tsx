@@ -1,5 +1,5 @@
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Layout, Menu, theme } from 'antd';
+import { Layout, Menu, Tag } from 'antd';
 import {
   DashboardOutlined,
   ProjectOutlined,
@@ -9,6 +9,8 @@ import {
   BookOutlined,
   SafetyCertificateOutlined,
   DiffOutlined,
+  CodeOutlined,
+  ApiOutlined,
 } from '@ant-design/icons';
 
 const { Header, Sider, Content } = Layout;
@@ -27,27 +29,34 @@ const menuItems = [
 export default function MainLayout() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { token: { colorBgContainer, borderRadiusLG } } = theme.useToken();
 
   return (
     <Layout style={{ height: '100vh' }}>
-      <Sider breakpoint="lg" collapsedWidth="0" style={{ overflow: 'auto' }}>
-        <div style={{ height: 32, margin: 16, background: 'rgba(255,255,255,0.2)', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 'bold' }}>
-          AI Code Review
+      <Sider breakpoint="lg" collapsedWidth="0" width={232} theme="light" className="app-sider">
+        <div className="app-logo">
+          <span className="app-logo-mark"><CodeOutlined /></span>
+          <span className="app-logo-text">AI Code Review</span>
         </div>
         <Menu
-          theme="dark"
           mode="inline"
+          className="app-menu"
           selectedKeys={[location.pathname]}
           items={menuItems}
           onClick={({ key }) => navigate(key)}
         />
       </Sider>
-      <Layout style={{ overflow: 'auto' }}>
-        <Header style={{ padding: '0 24px', background: colorBgContainer, display: 'flex', alignItems: 'center' }}>
-          <h2 style={{ margin: 0 }}>多Agent协作代码审查系统</h2>
+      <Layout className="app-main" style={{ overflow: 'auto' }}>
+        <Header className="app-header">
+          <h2 className="app-header-title">
+            <ApiOutlined /> 多 Agent 协作代码审查系统
+          </h2>
+          <div className="app-header-right">
+            <Tag color="geekblue" style={{ borderRadius: 999, padding: '1px 12px', margin: 0 }}>
+              CrewAI Flows + Crews
+            </Tag>
+          </div>
         </Header>
-        <Content style={{ margin: '24px 16px', padding: 24, background: colorBgContainer, borderRadius: borderRadiusLG }}>
+        <Content className="app-content">
           <Outlet />
         </Content>
       </Layout>

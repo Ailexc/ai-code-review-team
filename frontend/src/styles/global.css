@@ -1,11 +1,394 @@
+/* ========================================================
+   AI Code Review Team — 全局设计系统（明亮现代风）
+   2026-08 统一视觉：柔和渐变背景 + 描边卡片 + 现代排版
+   ======================================================== */
+
+:root {
+  /* ---- 色板 ---- */
+  --bg: #f5f7fb;
+  --bg-soft: #eef1f8;
+  --surface: #ffffff;
+  --surface-2: #f8fafc;
+  --surface-3: #f1f5f9;
+
+  --text-1: #1e293b;
+  --text-2: #55627a;
+  --text-3: #94a3b8;
+
+  --border: #e2e8f0;
+  --border-strong: #cbd5e1;
+
+  --primary: #4f46e5;
+  --primary-2: #6366f1;
+  --primary-3: #818cf8;
+  --primary-soft: #eef2ff;
+  --primary-gradient: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+
+  --success: #10b981;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  --info: #3b82f6;
+
+  /* ---- 圆角 ---- */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+
+  /* ---- 阴影 ---- */
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.06);
+  --shadow-md: 0 4px 12px -2px rgba(15, 23, 42, 0.08), 0 2px 4px -2px rgba(15, 23, 42, 0.06);
+  --shadow-lg: 0 20px 40px -16px rgba(15, 23, 42, 0.18), 0 4px 12px -6px rgba(15, 23, 42, 0.08);
+  --shadow-primary: 0 8px 20px -8px rgba(79, 70, 229, 0.5);
+
+  /* ---- 字体 ---- */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Segoe UI',
+    'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: 'SF Mono', 'JetBrains Mono', Menlo, Monaco, Consolas, 'Courier New', monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
 body {
   margin: 0;
   padding: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-1);
+  background: var(--bg);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
 #root {
   min-height: 100vh;
+}
+
+/* 主应用滚动容器：柔和渐变背景 */
+.app-main {
+  background:
+    radial-gradient(1100px 480px at 12% -8%, rgba(79, 70, 229, 0.07), transparent 60%),
+    radial-gradient(900px 420px at 92% -6%, rgba(59, 130, 246, 0.07), transparent 55%),
+    radial-gradient(700px 400px at 55% 110%, rgba(124, 58, 237, 0.05), transparent 60%),
+    var(--bg);
+}
+
+/* ---- 滚动条美化 ---- */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+  background-clip: padding-box;
+}
+
+/* ========================================================
+   通用页面头部
+   ======================================================== */
+.page-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 28px;
+}
+
+.page-header-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(79, 70, 229, 0.12), rgba(124, 58, 237, 0.1));
+  border: 1px solid rgba(79, 70, 229, 0.16);
+  color: var(--primary);
+  font-size: 22px;
+}
+
+.page-header-body {
+  min-width: 0;
+}
+
+.page-header-title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text-1);
+  line-height: 1.3;
+}
+
+.page-header-subtitle {
+  margin: 4px 0 0;
+  font-size: 14px;
+  color: var(--text-2);
+}
+
+.page-header-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* 页面内容容器 */
+.page-container {
+  max-width: 1440px;
+  margin: 0 auto;
+}
+
+/* ========================================================
+   AntD 组件现代化覆盖（与 ConfigProvider token 配合）
+   ======================================================== */
+
+/* 卡片：描边 + 柔和阴影 */
+.ant-card {
+  border-radius: var(--radius-lg) !important;
+  border: 1px solid rgba(226, 232, 240, 0.85) !important;
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow 0.25s ease, border-color 0.25s ease, transform 0.25s ease;
+}
+
+.ant-card-hoverable:hover {
+  box-shadow: var(--shadow-md);
+  border-color: rgba(79, 70, 229, 0.25) !important;
+}
+
+.ant-card .ant-card-head {
+  border-bottom: 1px solid var(--border);
+  min-height: 52px;
+  padding: 0 24px;
+}
+
+.ant-card .ant-card-head-title {
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--text-1);
+}
+
+.ant-card .ant-card-body {
+  padding: 20px 24px;
+}
+
+/* 表格 */
+.ant-table-thead > tr > th {
+  background: var(--surface-2) !important;
+  color: var(--text-2);
+  font-weight: 600;
+  border-bottom: 1px solid var(--border) !important;
+}
+
+.ant-table-tbody > tr > td {
+  border-bottom: 1px solid #f1f5f9 !important;
+}
+
+.ant-table-tbody > tr:hover > td {
+  background: rgba(79, 70, 229, 0.03) !important;
+}
+
+/* 主按钮：渐变 */
+.ant-btn-primary {
+  background: var(--primary-gradient) !important;
+  border: none !important;
+  box-shadow: 0 6px 16px -8px rgba(79, 70, 229, 0.6) !important;
+}
+
+.ant-btn-primary:not(:disabled):hover {
+  opacity: 0.92;
+  box-shadow: 0 10px 22px -10px rgba(79, 70, 229, 0.7) !important;
+}
+
+/* Tag 圆角 */
+.ant-tag {
+  border-radius: 6px;
+  border: none;
+  font-weight: 500;
+}
+
+/* Modal 圆角 */
+.ant-modal-content {
+  border-radius: var(--radius-lg) !important;
+  box-shadow: var(--shadow-lg) !important;
+}
+
+/* Drawer / Dropdown 圆角 */
+.ant-dropdown-menu,
+.ant-select-dropdown {
+  border-radius: var(--radius-md) !important;
+  box-shadow: var(--shadow-lg) !important;
+}
+
+/* 输入框聚焦 */
+.ant-input:focus,
+.ant-input-focused,
+.ant-input-affix-wrapper:focus,
+.ant-input-affix-wrapper-focused,
+.ant-select-focused .ant-select-selector {
+  border-color: var(--primary-2) !important;
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12) !important;
+}
+
+/* 页面级 AntD h1（旧页面逐步迁移到 .page-header） */
+h1 {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text-1);
+}
+
+/* ========================================================
+   侧边栏（明亮系）
+   ======================================================== */
+.app-sider {
+  background: rgba(255, 255, 255, 0.86) !important;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-right: 1px solid var(--border);
+  z-index: 20;
+}
+
+.app-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 20px;
+  height: 64px;
+}
+
+.app-logo-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--primary-gradient);
+  color: #fff;
+  font-size: 17px;
+  box-shadow: var(--shadow-primary);
+  flex-shrink: 0;
+}
+
+.app-logo-text {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-1);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.app-menu {
+  border-inline-end: none !important;
+  background: transparent !important;
+  padding: 8px 10px;
+}
+
+.app-menu .ant-menu-item {
+  border-radius: 10px;
+  margin: 3px 0;
+  height: 44px;
+  line-height: 44px;
+  color: var(--text-2);
+  font-weight: 500;
+}
+
+.app-menu .ant-menu-item .anticon {
+  font-size: 17px;
+}
+
+.app-menu .ant-menu-item:hover {
+  color: var(--primary) !important;
+  background: var(--primary-soft) !important;
+}
+
+.app-menu .ant-menu-item-selected {
+  color: var(--primary) !important;
+  background: linear-gradient(135deg, rgba(79, 70, 229, 0.14), rgba(124, 58, 237, 0.1)) !important;
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px rgba(79, 70, 229, 0.18);
+}
+
+/* ========================================================
+   顶栏（毛玻璃）
+   ======================================================== */
+.app-header {
+  display: flex;
+  align-items: center;
+  padding: 0 28px !important;
+  background: rgba(255, 255, 255, 0.82) !important;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid rgba(226, 232, 240, 0.8);
+  height: 64px;
+  line-height: 64px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.app-header-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-1);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.app-header-title .anticon {
+  color: var(--primary);
+}
+
+.app-header-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* ========================================================
+   内容区（全出血，解决"底部空白背景"）
+   ======================================================== */
+.app-content {
+  padding: 28px 32px 48px;
+}
+
+/* ========================================================
+   文档页专用（在 DocsPage.css 之上补强，统一明亮风）
+   ======================================================== */
+.docs-page {
+  background: transparent;
+}
+
+@media (max-width: 768px) {
+  .app-content {
+    padding: 20px 16px 40px;
+  }
+  .page-header {
+    flex-wrap: wrap;
+  }
+  .page-header-actions {
+    width: 100%;
+    margin-left: 0;
+  }
 }
