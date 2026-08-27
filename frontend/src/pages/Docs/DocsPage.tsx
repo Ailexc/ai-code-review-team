@@ -1,6 +1,24 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Spin, Empty, Row, Col, Tag, Input, Button } from 'antd';
-import { BookOutlined, SearchOutlined, ArrowLeftOutlined } from '@ant-design/icons';
+import { Spin, Empty, Row, Col, Input, Button, Tag } from 'antd';
+import {
+  BookOutlined,
+  SearchOutlined,
+  ArrowLeftOutlined,
+  DeploymentUnitOutlined,
+  TeamOutlined,
+  ToolOutlined,
+  SafetyOutlined,
+  CodeOutlined,
+  ExperimentOutlined,
+  BugOutlined,
+  ThunderboltOutlined,
+  BranchesOutlined,
+  RocketOutlined,
+  FormatPainterOutlined,
+  LineChartOutlined,
+  DashboardOutlined,
+  FundOutlined,
+} from '@ant-design/icons';
 import { useSearchParams } from 'react-router-dom';
 import api from '@/api/index';
 import './DocsPage.css';
@@ -21,11 +39,30 @@ interface DocContent {
   html: string;
 }
 
-// 分类颜色映射
-const CATEGORY_COLORS: Record<string, string> = {
-  '架构设计': '#1677ff',
-  'Agent 能力': '#722ed1',
-  '使用指南': '#52c41a',
+// 文档图标映射（emoji → @ant-design/icons）
+const DOC_ICONS: Record<string, React.ReactNode> = {
+  'architecture-overview': <DeploymentUnitOutlined />,
+  'multi-agent-orchestration': <TeamOutlined />,
+  'deterministic-plus-llm': <ToolOutlined />,
+  'security-agent': <SafetyOutlined />,
+  'code-style-agent': <CodeOutlined />,
+  'dependency-agent': <ExperimentOutlined />,
+  'test-coverage-agent': <BugOutlined />,
+  'performance-agent': <ThunderboltOutlined />,
+  'git-review-agent': <BranchesOutlined />,
+  'quick-start': <RocketOutlined />,
+  'autofix-guide': <FormatPainterOutlined />,
+  'incremental-review': <LineChartOutlined />,
+  'performance-and-observability': <DashboardOutlined />,
+  'evaluation-driven-improvements': <FundOutlined />,
+};
+
+// 分类强调色（柔和明亮）
+const CATEGORY_COLORS: Record<string, { main: string; soft: string }> = {
+  '架构设计': { main: '#4f46e5', soft: '#eef2ff' },
+  'Agent 能力': { main: '#7c3aed', soft: '#f5f3ff' },
+  '使用指南': { main: '#0d9488', soft: '#f0fdfa' },
+  '工程实践': { main: '#b45309', soft: '#fffbeb' },
 };
 
 export default function DocsPage() {
@@ -54,6 +91,7 @@ export default function DocsPage() {
       const doc = docs.find(d => d.id === docId && d.category === category);
       if (doc) handleSelectDoc(doc);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, docs]);
 
   const handleSelectDoc = async (doc: DocMeta) => {
@@ -62,7 +100,6 @@ export default function DocsPage() {
       const res = await api.get(`/docs/${doc.category}/${doc.id}`) as unknown as DocContent;
       setSelectedDoc(res);
       setSearchParams({ doc: doc.id, category: doc.category });
-      // 滚动到顶部
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch {
       setSelectedDoc(null);
@@ -90,15 +127,22 @@ export default function DocsPage() {
     return toc;
   }, []);
 
+  // 统一文档根容器：加 doc-root 类 + 移除内联样式，让前端 CSS 设计令牌统一作用于所有文档
+  useEffect(() => {
+    if (!selectedDoc || loading || !contentRef.current) return;
+    const root = contentRef.current.querySelector(':scope > div');
+    if (root && !root.classList.contains('doc-root')) {
+      root.classList.add('doc-root');
+      root.removeAttribute('style');
+    }
+  }, [selectedDoc, loading]);
+
   // 监听滚动，高亮当前目录项
   useEffect(() => {
-    // 必须在 loading 完成后 contentRef 才指向实际内容
     if (!selectedDoc || loading || !contentRef.current) return;
 
     const contentEl = contentRef.current;
 
-    // 从内容元素向上查找 overflow 为 auto/scroll 的滚动容器
-    // MainLayout 中 <Layout style={{ overflow: 'auto' }}> 就是实际滚动容器
     let scrollContainer: Element | null = null;
     let parent: Element | null = contentEl.parentElement;
     while (parent) {
@@ -127,7 +171,6 @@ export default function DocsPage() {
     };
 
     scrollContainer.addEventListener('scroll', handleScroll, { passive: true });
-    // 初始计算一次，确保进入页面时就有高亮
     handleScroll();
 
     return () => {
@@ -139,7 +182,6 @@ export default function DocsPage() {
   const handleTocClick = (id: string) => {
     const element = contentRef.current?.querySelector(`#${CSS.escape(id)}`);
     if (!element) return;
-    // 找到滚动容器
     let scrollContainer: Element | null = contentRef.current?.parentElement || null;
     while (scrollContainer && getComputedStyle(scrollContainer).overflow !== 'auto' && getComputedStyle(scrollContainer).overflow !== 'scroll') {
       scrollContainer = scrollContainer.parentElement;
@@ -204,10 +246,9 @@ export default function DocsPage() {
           <div className="docs-content-wrapper">
             <div className="docs-back-link">
               <Button
-                type="link"
+                type="text"
                 icon={<ArrowLeftOutlined />}
                 onClick={handleBackToList}
-                style={{ padding: 0 }}
               >
                 返回文档列表
               </Button>
@@ -228,43 +269,52 @@ export default function DocsPage() {
   // 列表页模式（卡片式）
   return (
     <div className="docs-page">
-      <div className="docs-header">
-        <div>
-          <h1 className="docs-header-title">
-            <BookOutlined /> 系统文档
-          </h1>
-          <p className="docs-header-subtitle">
-            系统架构设计、Agent 知识点、使用指南等技术文档。
-          </p>
+      <div className="page-header">
+        <div className="page-header-icon"><BookOutlined /></div>
+        <div className="page-header-body">
+          <h1 className="page-header-title">系统文档</h1>
+          <p className="page-header-subtitle">系统架构设计、Agent 知识点、使用指南等技术文档。</p>
         </div>
-        <Input
-          className="docs-search"
-          placeholder="搜索文档..."
-          prefix={<SearchOutlined />}
-          value={searchText}
-          onChange={e => setSearchText(e.target.value)}
-          allowClear
-        />
+        <div className="page-header-actions">
+          <Input
+            className="docs-search"
+            placeholder="搜索文档..."
+            prefix={<SearchOutlined />}
+            value={searchText}
+            onChange={e => setSearchText(e.target.value)}
+            allowClear
+          />
+        </div>
       </div>
 
-      {Object.entries(filteredCategories).map(([label, items]) => (
-        <div key={label} className="docs-category">
-          <h2 className="docs-category-title">
-            <Tag color={CATEGORY_COLORS[label] || '#666'} className="docs-category-tag">{label}</Tag>
-          </h2>
-          <Row gutter={[16, 16]}>
-            {items.map(doc => (
-              <Col xs={24} sm={12} lg={8} key={doc.id}>
-                <div className="doc-card" onClick={() => handleSelectDoc(doc)}>
-                  <div className="doc-card-icon">{doc.icon}</div>
-                  <h3 className="doc-card-title">{doc.title}</h3>
-                  <p className="doc-card-description">{doc.description}</p>
-                </div>
-              </Col>
-            ))}
-          </Row>
-        </div>
-      ))}
+      {Object.entries(filteredCategories).map(([label, items]) => {
+        const accent = CATEGORY_COLORS[label] || { main: '#4f46e5', soft: '#eef2ff' };
+        return (
+          <div key={label} className="docs-category">
+            <h2 className="docs-category-title">
+              <span className="docs-category-bar" style={{ background: accent.main }} />
+              {label}
+              <span className="docs-category-count">{items.length} 篇</span>
+            </h2>
+            <Row gutter={[20, 20]}>
+              {items.map(doc => (
+                <Col xs={24} sm={12} lg={8} key={doc.id}>
+                  <div className="doc-card" onClick={() => handleSelectDoc(doc)}>
+                    <div className="doc-card-icon" style={{ color: accent.main, background: accent.soft }}>
+                      {DOC_ICONS[doc.id] || <BookOutlined />}
+                    </div>
+                    <h3 className="doc-card-title">{doc.title}</h3>
+                    <p className="doc-card-description">{doc.description}</p>
+                    <span className="doc-card-more" style={{ color: accent.main }}>
+                      阅读全文 <span className="doc-card-arrow">→</span>
+                    </span>
+                  </div>
+                </Col>
+              ))}
+            </Row>
+          </div>
+        );
+      })}
 
       {Object.keys(filteredCategories).length === 0 && (
         <Empty description="未找到匹配的文档" style={{ marginTop: 80 }} />

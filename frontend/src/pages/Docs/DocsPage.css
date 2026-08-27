@@ -1,132 +1,145 @@
-/* ========================================
-   文档页面样式系统
-   参考 GitBook/Docusaurus 风格
-   ======================================== */
+/* ========================================================
+   文档页面样式系统（明亮现代风）
+   统一 .doc-root 排版令牌，作用于全部 14 篇文档
+   ======================================================== */
 
-/* Design Tokens */
-:root {
-  --doc-bg-primary: #f9fafb;
-  --doc-bg-secondary: #ffffff;
-  --doc-text-primary: #1f2937;
-  --doc-text-secondary: #6b7280;
-  --doc-text-tertiary: #9ca3af;
-  --doc-border-color: #e5e7eb;
-  --doc-link-color: #1677ff;
-  --doc-link-hover: #4096ff;
-  --doc-code-bg: #f6f8fa;
-  --doc-code-border: #e1e4e8;
-  --doc-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-  --doc-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-  --doc-radius: 8px;
-}
-
-/* 文档页面容器 */
+/* 文档页容器：透明承接全局渐变背景 */
 .docs-page {
-  background: var(--doc-bg-primary);
   min-height: 100%;
-  padding: 32px 24px;
+  padding: 8px 4px 24px;
 }
 
 /* ========================================
-   列表页样式
+   列表页
    ======================================== */
-.docs-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 40px;
-  gap: 24px;
-}
-
-.docs-header-title {
-  margin: 0 0 8px 0;
-  font-size: 32px;
-  font-weight: 700;
-  color: var(--doc-text-primary);
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.docs-header-subtitle {
-  margin: 0;
-  font-size: 15px;
-  color: var(--doc-text-secondary);
-}
-
 .docs-search {
   width: 280px;
-  flex-shrink: 0;
+  border-radius: 10px;
 }
 
 .docs-category {
-  margin-bottom: 48px;
+  margin-bottom: 44px;
 }
 
 .docs-category-title {
-  margin: 0 0 20px 0;
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--doc-text-primary);
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+  margin: 0 0 20px 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-1);
+  letter-spacing: -0.01em;
 }
 
-.docs-category-tag {
-  font-size: 13px;
+.docs-category-bar {
+  width: 4px;
+  height: 18px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.docs-category-count {
+  font-size: 12px;
   font-weight: 500;
+  color: var(--text-3);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  padding: 1px 10px;
+  border-radius: 999px;
 }
 
 /* 文档卡片 */
 .doc-card {
-  background: var(--doc-bg-secondary);
-  border: 1px solid var(--doc-border-color);
-  border-radius: var(--doc-radius);
+  background: var(--surface);
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  border-radius: var(--radius-lg);
   padding: 24px;
   cursor: pointer;
-  transition: all 0.2s ease;
   height: 100%;
   display: flex;
   flex-direction: column;
+  position: relative;
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+}
+
+.doc-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--primary-2), var(--primary-3), transparent);
+  opacity: 0;
+  transition: opacity 0.25s ease;
 }
 
 .doc-card:hover {
-  border-color: var(--doc-link-color);
-  box-shadow: var(--doc-shadow-md);
-  transform: translateY(-2px);
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-lg);
+  border-color: rgba(79, 70, 229, 0.25);
+}
+
+.doc-card:hover::before {
+  opacity: 1;
 }
 
 .doc-card-icon {
-  font-size: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  font-size: 22px;
   margin-bottom: 16px;
-  line-height: 1;
 }
 
 .doc-card-title {
   margin: 0 0 8px 0;
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 600;
-  color: var(--doc-text-primary);
-  line-height: 1.4;
+  color: var(--text-1);
+  line-height: 1.45;
 }
 
 .doc-card-description {
-  margin: 0;
-  font-size: 14px;
-  color: var(--doc-text-secondary);
+  margin: 0 0 16px 0;
+  font-size: 13.5px;
+  color: var(--text-2);
   line-height: 1.6;
   flex: 1;
 }
 
+.doc-card-more {
+  font-size: 13px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.doc-card-arrow {
+  transition: transform 0.2s ease;
+  font-size: 14px;
+}
+
+.doc-card:hover .doc-card-arrow {
+  transform: translateX(3px);
+}
+
 /* ========================================
-   详情页样式
+   详情页
    ======================================== */
 .docs-detail {
   display: flex;
-  gap: 48px;
+  gap: 40px;
   max-width: 1400px;
   margin: 0 auto;
+  align-items: flex-start;
 }
 
 /* 左侧目录 */
@@ -134,42 +147,48 @@
   width: 220px;
   flex-shrink: 0;
   position: sticky;
-  top: 24px;
+  top: 88px;
   align-self: flex-start;
-  max-height: calc(100vh - 48px);
+  max-height: calc(100vh - 112px);
   overflow-y: auto;
-  padding-left: 16px;
+  padding: 12px 8px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  border-radius: var(--radius-md);
+  backdrop-filter: blur(8px);
 }
 
 .docs-toc-title {
-  margin: 0 0 12px 0;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--doc-text-tertiary);
+  margin: 0 0 10px 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-3);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.08em;
 }
 
 .docs-toc-item {
-  padding: 6px 12px;
+  padding: 7px 12px;
   cursor: pointer;
-  border-radius: 6px;
-  font-size: 14px;
-  color: var(--doc-text-secondary);
-  margin-bottom: 2px;
+  border-radius: 8px;
+  font-size: 13.5px;
+  color: var(--text-2);
+  margin-bottom: 1px;
   transition: all 0.15s ease;
   line-height: 1.5;
+  border-left: 2px solid transparent;
 }
 
 .docs-toc-item:hover {
-  background: rgba(22, 119, 255, 0.08);
-  color: var(--doc-link-color);
+  background: var(--primary-soft);
+  color: var(--primary);
 }
 
 .docs-toc-item.active {
-  background: rgba(22, 119, 255, 0.12);
-  color: var(--doc-link-color);
-  font-weight: 500;
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-weight: 600;
+  border-left-color: var(--primary);
 }
 
 /* 右侧内容区 */
@@ -179,105 +198,119 @@
 }
 
 .docs-back-link {
-  margin-bottom: 16px;
+  margin-bottom: 14px;
+  padding-left: 4px;
+}
+
+.docs-back-link .ant-btn {
+  color: var(--text-2);
+  font-weight: 500;
+}
+
+.docs-back-link .ant-btn:hover {
+  color: var(--primary);
+  background: var(--primary-soft);
 }
 
 .docs-content {
-  background: var(--doc-bg-secondary);
-  border: 1px solid var(--doc-border-color);
-  border-radius: var(--doc-radius);
-  padding: 48px 56px;
-  box-shadow: var(--doc-shadow-sm);
+  background: var(--surface);
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  border-radius: var(--radius-lg);
+  padding: 44px 52px;
+  box-shadow: var(--shadow-sm);
 }
 
 /* ========================================
-   文档内容排版系统
+   文档内容排版系统（.doc-root）
    ======================================== */
 .doc-root {
-  max-width: 860px;
+  max-width: 880px;
   margin: 0 auto;
+  font-family: var(--font-sans);
   font-size: 16px;
-  line-height: 1.7;
-  color: var(--doc-text-primary);
-}
-
-.doc-lead {
-  font-size: 17px;
-  line-height: 1.6;
-  color: var(--doc-text-secondary);
-  margin-bottom: 32px;
+  line-height: 1.75;
+  color: var(--text-1);
+  -webkit-font-smoothing: antialiased;
 }
 
 /* 标题层级 */
 .doc-root h1 {
-  font-size: 36px;
-  font-weight: 700;
-  margin: 0 0 24px 0;
-  color: var(--doc-text-primary);
+  font-size: 30px;
+  font-weight: 800;
+  margin: 0 0 20px 0;
+  color: var(--text-1);
   line-height: 1.3;
-  border-bottom: 2px solid var(--doc-border-color);
-  padding-bottom: 12px;
+  letter-spacing: -0.02em;
+  padding-bottom: 16px;
+  border-bottom: 2px solid var(--border);
 }
 
 .doc-root h2 {
-  font-size: 28px;
-  font-weight: 600;
-  margin: 48px 0 20px 0;
-  color: var(--doc-text-primary);
-  line-height: 1.3;
-  border-bottom: 1px solid var(--doc-border-color);
-  padding-bottom: 8px;
+  font-size: 23px;
+  font-weight: 700;
+  margin: 44px 0 18px 0;
+  color: var(--text-1);
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
 }
 
 .doc-root h3 {
-  font-size: 22px;
-  font-weight: 600;
-  margin: 36px 0 16px 0;
-  color: var(--doc-text-primary);
+  font-size: 19px;
+  font-weight: 700;
+  margin: 32px 0 14px 0;
+  color: var(--text-1);
   line-height: 1.4;
 }
 
 .doc-root h4 {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 600;
-  margin: 28px 0 12px 0;
-  color: var(--doc-text-primary);
+  margin: 26px 0 12px 0;
+  color: var(--text-1);
   line-height: 1.4;
 }
 
 /* 段落和文本 */
 .doc-root p {
   margin: 0 0 16px 0;
-  line-height: 1.7;
+  line-height: 1.75;
+  color: var(--text-1);
 }
 
 .doc-root strong {
   font-weight: 600;
-  color: var(--doc-text-primary);
+  color: var(--text-1);
 }
 
 /* 链接 */
 .doc-root a {
-  color: var(--doc-link-color);
+  color: var(--primary) !important;
   text-decoration: none;
   transition: color 0.15s ease;
+  border-bottom: 1px solid transparent;
 }
 
 .doc-root a:hover {
-  color: var(--doc-link-hover);
-  text-decoration: underline;
+  color: var(--primary-2) !important;
+  border-bottom-color: var(--primary-2);
 }
 
 /* 列表 */
 .doc-root ul,
 .doc-root ol {
   margin: 0 0 16px 0;
-  padding-left: 28px;
+  padding-left: 26px;
 }
 
 .doc-root li {
   margin-bottom: 8px;
-  line-height: 1.6;
+  line-height: 1.7;
+}
+
+.doc-root li::marker {
+  color: var(--primary-3);
 }
 
 .doc-root li > ul,
@@ -286,105 +319,112 @@
   margin-bottom: 0;
 }
 
-/* 代码块 */
-.doc-root pre,
-.doc-root .code-block {
-  background: var(--doc-code-bg);
-  border: 1px solid var(--doc-code-border);
-  border-radius: 6px;
-  padding: 16px;
-  margin: 0 0 16px 0;
+/* 代码块（保留文档浅灰内联样式，这里兜底统一） */
+.doc-root pre {
+  background: #f6f8fa !important;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 18px 20px;
+  margin: 0 0 20px 0;
   overflow-x: auto;
-  font-size: 14px;
-  line-height: 1.6;
+  font-family: var(--font-mono);
+  font-size: 13.5px;
+  line-height: 1.65;
+  color: #1e293b;
 }
 
 .doc-root pre code,
 .doc-root .code-block code {
-  font-family: 'Menlo', 'Monaco', 'Consolas', 'Courier New', monospace;
-  font-size: 14px;
+  font-family: var(--font-mono);
+  font-size: 13.5px;
   background: transparent;
   padding: 0;
   border: none;
-  color: var(--doc-text-primary);
+  color: inherit;
 }
 
 /* 行内代码 */
 .doc-root code {
-  font-family: 'Menlo', 'Monaco', 'Consolas', 'Courier New', monospace;
-  font-size: 0.9em;
-  background: var(--doc-code-bg);
-  border: 1px solid var(--doc-code-border);
-  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
   padding: 2px 6px;
-  color: #d63384;
+  color: #7c3aed;
 }
 
 /* 表格 */
 .doc-root table {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   margin: 0 0 20px 0;
-  font-size: 15px;
-  background: var(--doc-bg-secondary);
-  border-radius: 6px;
+  font-size: 14.5px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
   overflow: hidden;
-  box-shadow: var(--doc-shadow-sm);
 }
 
 .doc-root thead {
-  background: var(--doc-code-bg);
-  border-bottom: 2px solid var(--doc-border-color);
+  background: var(--surface-2);
 }
 
 .doc-root th {
   padding: 12px 16px;
   text-align: left;
   font-weight: 600;
-  color: var(--doc-text-primary);
-  font-size: 14px;
+  color: var(--text-1);
+  font-size: 13.5px;
+  border-bottom: 1px solid var(--border);
 }
 
 .doc-root td {
   padding: 12px 16px;
-  border-top: 1px solid var(--doc-border-color);
+  border-top: 1px solid #f1f5f9;
   vertical-align: top;
+  color: var(--text-1);
+}
+
+.doc-root tbody tr {
+  transition: background 0.15s ease;
 }
 
 .doc-root tbody tr:hover {
-  background: rgba(22, 119, 255, 0.02);
+  background: rgba(79, 70, 229, 0.03);
 }
 
 /* 图表/示意图 */
 .doc-root .diagram {
-  background: var(--doc-code-bg);
-  border: 1px solid var(--doc-code-border);
-  border-radius: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
   padding: 20px;
   margin: 0 0 20px 0;
   overflow-x: auto;
-  font-family: 'Menlo', 'Monaco', 'Consolas', 'Courier New', monospace;
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--doc-text-primary);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: #334155;
 }
 
-/* 目录导航 */
+/* 文档内目录导航 */
 .doc-root .doc-toc {
-  background: var(--doc-code-bg);
-  border: 1px solid var(--doc-code-border);
-  border-radius: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
   padding: 20px 24px;
-  margin: 0 0 32px 0;
+  margin: 0 0 28px 0;
 }
 
 .doc-root .doc-toc strong {
   display: block;
   margin-bottom: 12px;
-  font-size: 14px;
-  color: var(--doc-text-secondary);
+  font-size: 13px;
+  color: var(--text-2);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.05em;
 }
 
 .doc-root .doc-toc ol {
@@ -396,23 +436,19 @@
   margin-bottom: 6px;
 }
 
-.doc-root .doc-toc a {
-  color: var(--doc-link-color);
-  font-size: 15px;
-}
-
 /* Agent 信息表 */
 .doc-root .agent-info {
-  background: var(--doc-code-bg);
-  border: 1px solid var(--doc-code-border);
-  border-radius: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
   margin: 0 0 20px 0;
+  overflow: hidden;
 }
 
 .doc-root .agent-info td {
   padding: 10px 16px;
   border: none;
-  border-top: 1px solid var(--doc-border-color);
+  border-top: 1px solid var(--border);
 }
 
 .doc-root .agent-info tr:first-child td {
@@ -422,52 +458,60 @@
 /* 高亮卡片网格 */
 .doc-root .highlight-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
   margin: 0 0 24px 0;
 }
 
 .doc-root .highlight-card {
-  background: var(--doc-bg-secondary);
-  border: 1px solid var(--doc-border-color);
-  border-radius: var(--doc-radius);
-  padding: 20px;
-  box-shadow: var(--doc-shadow-sm);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 18px 20px;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.doc-root .highlight-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
 }
 
 .doc-root .highlight-card h4 {
-  margin: 0 0 12px 0;
-  font-size: 17px;
+  margin: 0 0 10px 0;
+  font-size: 15px;
   font-weight: 600;
-  color: var(--doc-link-color);
+  color: var(--primary);
 }
 
 .doc-root .highlight-card p {
   margin: 0;
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1.6;
-  color: var(--doc-text-secondary);
+  color: var(--text-2);
 }
 
 /* 引用块 */
 .doc-root blockquote {
-  border-left: 4px solid var(--doc-link-color);
+  border-left: 4px solid var(--primary);
   padding: 12px 20px;
   margin: 0 0 16px 0;
-  background: var(--doc-code-bg);
-  color: var(--doc-text-secondary);
-  font-style: italic;
+  background: var(--primary-soft);
+  color: var(--text-2);
+  border-radius: 0 10px 10px 0;
 }
 
 .doc-root blockquote p {
   margin: 0;
+  color: inherit;
 }
 
 /* 分隔线 */
 .doc-root hr {
   border: none;
-  border-top: 1px solid var(--doc-border-color);
-  margin: 32px 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--border), transparent);
+  margin: 36px 0;
 }
 
 /* ========================================
@@ -477,9 +521,8 @@
   .docs-toc {
     width: 200px;
   }
-  
   .docs-content {
-    padding: 36px;
+    padding: 36px 40px;
   }
 }
 
@@ -487,23 +530,18 @@
   .docs-detail {
     flex-direction: column;
   }
-  
   .docs-toc {
     width: 100%;
     position: static;
     max-height: none;
-    margin-bottom: 24px;
+    margin-bottom: 20px;
   }
-  
   .docs-content {
-    padding: 32px 24px;
+    padding: 28px 24px;
   }
-  
-  .docs-header {
-    flex-direction: column;
-    align-items: stretch;
+  .page-header {
+    flex-wrap: wrap;
   }
-  
   .docs-search {
     width: 100%;
   }
@@ -511,29 +549,23 @@
 
 @media (max-width: 768px) {
   .docs-page {
-    padding: 24px 16px;
+    padding: 0 2px 16px;
   }
-  
-  .docs-header-title {
-    font-size: 28px;
+  .page-header-title {
+    font-size: 21px;
   }
-  
   .doc-root h1 {
-    font-size: 30px;
-  }
-  
-  .doc-root h2 {
     font-size: 24px;
   }
-  
-  .doc-root h3 {
+  .doc-root h2 {
     font-size: 20px;
   }
-  
-  .docs-content {
-    padding: 24px 20px;
+  .doc-root h3 {
+    font-size: 17px;
   }
-  
+  .docs-content {
+    padding: 22px 18px;
+  }
   .doc-root .highlight-grid {
     grid-template-columns: 1fr;
   }
