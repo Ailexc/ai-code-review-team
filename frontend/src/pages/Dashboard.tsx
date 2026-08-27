@@ -94,8 +94,8 @@ interface MetricsSnapshot {
   };
 }
 
-const PIE_COLORS = ['#ff4d4f', '#faad14', '#1677ff', '#d9d9d9'];
-const STATUS_COLORS: Record<string, string> = { open: '#1677ff', acknowledged: '#faad14', fixed: '#52c41a' };
+const PIE_COLORS = ['#f43f5e', '#f59e0b', '#4f46e5', '#e2e8f0'];
+const STATUS_COLORS: Record<string, string> = { open: '#4f46e5', acknowledged: '#f59e0b', fixed: '#10b981' };
 
 // Agent 中文名映射
 const AGENT_LABELS: Record<string, string> = {
@@ -285,7 +285,7 @@ export default function Dashboard() {
             <Statistic
               title="项目总数"
               value={stats?.projects_total ?? 0}
-              prefix={<ProjectOutlined style={{ color: '#1677ff' }} />}
+              prefix={<ProjectOutlined style={{ color: '#4f46e5' }} />}
             />
           </Card>
         </Col>
@@ -294,7 +294,7 @@ export default function Dashboard() {
             <Statistic
               title="审查任务"
               value={stats?.reviews_total ?? 0}
-              prefix={<FileSearchOutlined style={{ color: '#722ed1' }} />}
+              prefix={<FileSearchOutlined style={{ color: '#8b5cf6' }} />}
             />
           </Card>
         </Col>
@@ -303,8 +303,8 @@ export default function Dashboard() {
             <Statistic
               title="发现问题"
               value={stats?.findings_total ?? 0}
-              prefix={<BugOutlined style={{ color: '#ff4d4f' }} />}
-              valueStyle={{ color: '#ff4d4f' }}
+              prefix={<BugOutlined style={{ color: '#f43f5e' }} />}
+              valueStyle={{ color: '#f43f5e' }}
             />
           </Card>
         </Col>
@@ -313,8 +313,8 @@ export default function Dashboard() {
             <Statistic
               title="已解决"
               value={stats?.findings_fixed ?? 0}
-              prefix={<CheckCircleOutlined style={{ color: '#52c41a' }} />}
-              valueStyle={{ color: '#52c41a' }}
+              prefix={<CheckCircleOutlined style={{ color: '#10b981' }} />}
+              valueStyle={{ color: '#10b981' }}
             />
           </Card>
         </Col>
@@ -331,7 +331,7 @@ export default function Dashboard() {
               <Tooltip formatter={(value) => [`${value} 分`, '健康度']} labelFormatter={(label) => `项目: ${label}`} />
               <Bar dataKey="健康度" radius={[4, 4, 0, 0]}>
                 {projectHealthData.map((entry) => (
-                  <Cell key={entry.name} fill={entry.健康度 >= 80 ? '#52c41a' : entry.健康度 >= 60 ? '#faad14' : '#ff4d4f'} />
+                  <Cell key={entry.name} fill={entry.健康度 >= 80 ? '#10b981' : entry.健康度 >= 60 ? '#f59e0b' : '#f43f5e'} />
                 ))}
               </Bar>
             </BarChart>
@@ -397,7 +397,7 @@ export default function Dashboard() {
                       <span>{label}</span>
                       <span style={{ color: '#666' }}>{count} 次</span>
                     </div>
-                    <Progress percent={Math.round((count / (metrics.reviews.total || 1)) * 100)} size="small" strokeColor="#1677ff" />
+                    <Progress percent={Math.round((count / (metrics.reviews.total || 1)) * 100)} size="small" strokeColor="#4f46e5" />
                   </div>
                 ))}
               </div>
@@ -413,7 +413,7 @@ export default function Dashboard() {
                       <span>{label}</span>
                       <span style={{ color: '#666' }}>{dur}s</span>
                     </div>
-                    <Progress percent={Math.min(100, Math.round((dur / 180) * 100))} size="small" strokeColor="#722ed1" />
+                    <Progress percent={Math.min(100, Math.round((dur / 180) * 100))} size="small" strokeColor="#8b5cf6" />
                   </div>
                 ))}
               </div>
@@ -429,7 +429,7 @@ export default function Dashboard() {
                       <span>{label}</span>
                       <span style={{ color: '#666' }}>{count} 个</span>
                     </div>
-                    <Progress percent={Math.round((count / maxAgentCount) * 100)} size="small" strokeColor="#13c2c2" />
+                    <Progress percent={Math.round((count / maxAgentCount) * 100)} size="small" strokeColor="#14b8a6" />
                   </div>
                 ))}
               </div>

@@ -6,7 +6,7 @@ import {
   DownloadOutlined, EyeOutlined, MoreOutlined, CheckCircleOutlined, UndoOutlined,
   ThunderboltOutlined, MinusCircleOutlined, LoadingOutlined,
   RobotOutlined, ToolOutlined, FileTextOutlined, BulbOutlined, RightOutlined,
-  ApartmentOutlined, FileSearchOutlined, ExportOutlined, ImportOutlined, FolderOutlined,
+  ApartmentOutlined, ExportOutlined, ImportOutlined, FolderOutlined,
 } from '@ant-design/icons';
 import api from '@/api/index';
 import dayjs from 'dayjs';
@@ -231,9 +231,9 @@ export default function ReviewDetail() {
 
   const severityIcon = (severity: string) => {
     switch (severity) {
-      case 'critical': return <ExclamationCircleOutlined style={{ color: '#ff4d4f' }} />;
-      case 'warning': return <WarningOutlined style={{ color: '#faad14' }} />;
-      default: return <InfoCircleOutlined style={{ color: '#1677ff' }} />;
+      case 'critical': return <ExclamationCircleOutlined style={{ color: '#f43f5e' }} />;
+      case 'warning': return <WarningOutlined style={{ color: '#f59e0b' }} />;
+      default: return <InfoCircleOutlined style={{ color: '#4f46e5' }} />;
     }
   };
 
@@ -246,9 +246,9 @@ export default function ReviewDetail() {
 
   // ---- 执行流程时间线辅助 ----
   const stepIcon = (status: string) => {
-    if (status === 'completed') return <CheckCircleOutlined style={{ color: '#52c41a' }} />;
+    if (status === 'completed') return <CheckCircleOutlined style={{ color: '#10b981' }} />;
     if (status === 'skipped') return <MinusCircleOutlined style={{ color: '#bfbfbf' }} />;
-    if (status === 'failed') return <ExclamationCircleOutlined style={{ color: '#ff4d4f' }} />;
+    if (status === 'failed') return <ExclamationCircleOutlined style={{ color: '#f43f5e' }} />;
     return <LoadingOutlined />;
   };
 
@@ -289,7 +289,7 @@ export default function ReviewDetail() {
     return (
       <div style={{ marginTop: 6, padding: '8px 10px', background: '#f6f8fa', borderRadius: 6, border: '1px solid #e8e8e8' }}>
         <div style={{ fontSize: 13, color: '#444' }}>
-          <BulbOutlined style={{ color: '#faad14', marginRight: 6 }} />
+          <BulbOutlined style={{ color: '#f59e0b', marginRight: 6 }} />
           <Typography.Text type="secondary" strong>为什么：</Typography.Text>
           {card.text}
         </div>
@@ -334,7 +334,7 @@ export default function ReviewDetail() {
     const transcriptId = (c.detail?.transcript_id as string | undefined);
     return (
       <div key={c.id} style={{ display: 'flex', gap: 8, padding: '5px 0', borderBottom: '1px dashed #f0f0f0' }}>
-        <span style={{ color: isLlm ? '#722ed1' : '#13c2c2', flexShrink: 0, paddingTop: 1 }}>
+        <span style={{ color: isLlm ? '#8b5cf6' : '#14b8a6', flexShrink: 0, paddingTop: 1 }}>
           {isLlm ? <RobotOutlined /> : <ToolOutlined />}
         </span>
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -372,7 +372,7 @@ export default function ReviewDetail() {
     return (
       <Tooltip title={`占最耗时步骤的 ${pct}%`}>
         <div style={{ height: 4, background: '#f0f0f0', borderRadius: 2, marginTop: 4, width: '60%' }}>
-          <div style={{ height: 4, width: `${pct}%`, background: s.phase === 'inner_crew' ? '#722ed1' : '#1677ff', borderRadius: 2 }} />
+          <div style={{ height: 4, width: `${pct}%`, background: s.phase === 'inner_crew' ? '#8b5cf6' : '#4f46e5', borderRadius: 2 }} />
         </div>
       </Tooltip>
     );
@@ -515,7 +515,7 @@ export default function ReviewDetail() {
         title={
           llmLog ? (
             <Space>
-              <RobotOutlined style={{ color: '#722ed1' }} />
+              <RobotOutlined style={{ color: '#8b5cf6' }} />
               LLM 调用全文 · {llmLog.model || '?'} · {llmLog.total_tokens} tokens · {llmLog.latency_ms != null ? `${(llmLog.latency_ms / 1000).toFixed(1)}s` : '-'}
             </Space>
           ) : 'LLM 调用全文'
@@ -572,7 +572,7 @@ export default function ReviewDetail() {
                   menu={{
                     items: [
                       { key: 'acknowledged', label: '标记已确认', icon: <CheckCircleOutlined /> },
-                      { key: 'fixed', label: '标记已解决', icon: <CheckCircleOutlined style={{ color: '#52c41a' }} /> },
+                      { key: 'fixed', label: '标记已解决', icon: <CheckCircleOutlined style={{ color: '#10b981' }} /> },
                       { key: 'open', label: '重新打开', icon: <UndoOutlined /> },
                     ],
                     onClick: ({ key }) => handleStatusChange(finding.id, key),
@@ -667,7 +667,7 @@ export default function ReviewDetail() {
       >
         {!autofixResult ? (
           <div style={{ textAlign: 'center', padding: 24 }}>
-            <ThunderboltOutlined style={{ fontSize: 40, color: '#1677ff', marginBottom: 16 }} />
+            <ThunderboltOutlined style={{ fontSize: 40, color: '#4f46e5', marginBottom: 16 }} />
             <p>将自动修复标记为"可自动修复"的发现（如 import 排序、格式化等）</p>
             <p style={{ color: '#999' }}>建议先"预览补丁"确认后再"应用修复"</p>
           </div>

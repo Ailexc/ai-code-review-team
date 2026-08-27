@@ -58,12 +58,12 @@ const AGENT_ICONS: Record<string, React.ReactNode> = {
 };
 
 const AGENT_COLORS: Record<string, string> = {
-  security: '#ff4d4f',
-  code_style: '#faad14',
-  dependency: '#1677ff',
-  test_coverage: '#52c41a',
-  performance: '#722ed1',
-  git_review: '#13c2c2',
+  security: '#f43f5e',
+  code_style: '#f59e0b',
+  dependency: '#4f46e5',
+  test_coverage: '#10b981',
+  performance: '#8b5cf6',
+  git_review: '#14b8a6',
 };
 
 interface ReviewProgressProps {
@@ -179,8 +179,8 @@ export default function ReviewProgress({
   }, [open, projectId, reviewType]);
 
   const statusIcon = (s: AgentStep['status']) => {
-    if (s === 'done') return <CheckCircleOutlined style={{ color: '#52c41a' }} />;
-    if (s === 'running') return <LoadingOutlined style={{ color: '#1677ff' }} />;
+    if (s === 'done') return <CheckCircleOutlined style={{ color: '#10b981' }} />;
+    if (s === 'running') return <LoadingOutlined style={{ color: '#4f46e5' }} />;
     return <ClockCircleOutlined style={{ color: '#bfbfbf' }} />;
   };
 
@@ -207,12 +207,12 @@ export default function ReviewProgress({
       <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
         {FLOW_NODES.map((n, i) => {
           const status = n.node === 'crews' ? crewsStatus : flowNodes[n.node] || 'pending';
-          const color = status === 'done' ? '#52c41a' : status === 'running' ? '#1677ff' : '#bfbfbf';
+          const color = status === 'done' ? '#10b981' : status === 'running' ? '#4f46e5' : '#bfbfbf';
           return (
             <div key={n.node} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               {i > 0 && <div style={{ width: 14, height: 1, background: color }} />}
               <div style={{
-                border: `1px solid ${status === 'pending' ? '#d9d9d9' : color}`,
+                border: `1px solid ${status === 'pending' ? '#e2e8f0' : color}`,
                 borderRadius: 6,
                 padding: '2px 8px',
                 fontSize: 12,
@@ -233,12 +233,12 @@ export default function ReviewProgress({
   const renderAgentGrid = () => (
     <Row gutter={[12, 12]}>
       {agents.map((a) => {
-        const color = AGENT_COLORS[a.agent] || '#1677ff';
+        const color = AGENT_COLORS[a.agent] || '#4f46e5';
         const icon = AGENT_ICONS[a.agent] || <BugOutlined />;
         return (
           <Col xs={12} sm={8} md={4} key={a.agent}>
             <div style={{
-              border: `1px solid ${a.status === 'done' ? color : '#d9d9d9'}`,
+              border: `1px solid ${a.status === 'done' ? color : '#e2e8f0'}`,
               borderRadius: 8,
               padding: 12,
               textAlign: 'center',
@@ -270,7 +270,7 @@ export default function ReviewProgress({
       <div style={{ marginBottom: 16 }}>
         {open && (
           <Card
-            title={<Space><StarFilled style={{ color: '#f5222d' }} /> 审查执行中</Space>}
+            title={<Space><StarFilled style={{ color: '#f43f5e' }} /> 审查执行中</Space>}
             size="small"
           >
             {!connected && !completed && !error && (
