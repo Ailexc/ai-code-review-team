@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Table, Button, Modal, Form, Input, Select, Switch, Tag, Space, message, Popconfirm, Tooltip } from 'antd';
-import { PlusOutlined, ReloadOutlined, ApiOutlined, CheckCircleOutlined, CloseCircleOutlined } from '@ant-design/icons';
+import { PlusOutlined, ReloadOutlined, ApiOutlined, CheckCircleOutlined, CloseCircleOutlined, SettingOutlined } from '@ant-design/icons';
 import { llmConfigApi, LLMConfig, LLMConfigCreate, LLMTestResult } from '@/api/llmConfigApi';
 import dayjs from 'dayjs';
 
@@ -151,22 +151,22 @@ export default function ModelSettings() {
   const selectedProvider = PROVIDERS.find(p => p.value === provider);
 
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-        <h1>模型配置</h1>
-        <Space>
+    <div className="page-container">
+      <div className="page-header">
+        <div className="page-header-icon"><SettingOutlined /></div>
+        <div className="page-header-body">
+          <h1 className="page-header-title">模型配置</h1>
+          <p className="page-header-subtitle">配置 LLM 模型用于代码审查的智能分析，支持 OpenAI、DeepSeek、Ollama 等。</p>
+        </div>
+        <div className="page-header-actions">
           <Button icon={<ReloadOutlined />} onClick={fetchConfigs}>刷新</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => {
             setEditing(null);
             form.resetFields();
             setModalOpen(true);
           }}>添加模型</Button>
-        </Space>
+        </div>
       </div>
-
-      <p style={{ color: '#666', marginBottom: 16 }}>
-        配置 LLM 模型用于代码审查的智能分析。支持 OpenAI、DeepSeek、Ollama 等。
-      </p>
 
       <Table
         dataSource={configs}

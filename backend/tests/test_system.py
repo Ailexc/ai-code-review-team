@@ -1,7 +1,8 @@
 """系统 API 集成测试"""
 
 import pytest
-from unittest.mock import patch
+
+from helpers import patch_review_flow
 
 
 @pytest.mark.asyncio
@@ -38,17 +39,10 @@ async def test_stats_with_data(client):
     })
     project = (await client.get("/api/v1/projects")).json()["items"][0]
 
-    class FakeAgent:
-        async def analyze(self, project_path, file_paths=None):
-            return [
-                {"severity": "critical", "message": "c1", "file_path": "a.py", "line_start": 1},
-                {"severity": "warning", "message": "w1", "file_path": "b.py", "line_start": 1},
-            ]
-
-    with patch.dict(
-        "app.services.review_service.AGENT_REGISTRY",
-        {"security": (FakeAgent, "security", "security")},
-    ):
+    with patch_review_flow({"security": [
+        {"severity": "critical", "message": "c1", "file_path": "a.py", "line_start": 1},
+        {"severity": "warning", "message": "w1", "file_path": "b.py", "line_start": 1},
+    ]}):
         await client.post("/api/v1/reviews/run", params={"project_id": project["id"]})
 
     resp = await client.get("/api/v1/system/stats")
@@ -90,14 +84,7 @@ async def test_metrics_after_review(client):
     })
     project = (await client.get("/api/v1/projects")).json()["items"][0]
 
-    class FakeAgent:
-        async def analyze(self, project_path, file_paths=None):
-            return [{"severity": "warning", "message": "w1", "file_path": "a.py", "line_start": 1}]
-
-    with patch.dict(
-        "app.services.review_service.AGENT_REGISTRY",
-        {"security": (FakeAgent, "security", "security")},
-    ):
+    with patch_review_flow({"security": [{"severity": "warning", "message": "w1", "file_path": "a.py", "line_start": 1}]}):
         await client.post("/api/v1/reviews/run", params={"project_id": project["id"], "review_type": "security"})
 
     resp = await client.get("/api/v1/system/metrics")

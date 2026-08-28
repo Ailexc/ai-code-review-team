@@ -1,31 +1,28 @@
 """发现管理 API 集成测试"""
 
 import pytest
-from unittest.mock import patch
 
+from helpers import patch_review_flow
 
-class FakeAgent:
-    """返回固定 findings 的假 Agent"""
-    async def analyze(self, project_path, file_paths=None):
-        return [
-            {
-                "severity": "critical",
-                "message": "SQL 注入风险",
-                "file_path": "app/main.py",
-                "line_start": 10,
-                "code_snippet": "SELECT * FROM users",
-                "suggestion": "使用参数化查询",
-            },
-            {
-                "severity": "warning",
-                "message": "未使用的变量",
-                "file_path": "app/utils.py",
-                "line_start": 20,
-                "code_snippet": "unused = 1",
-                "suggestion": "删除未使用的变量",
-                "is_auto_fixable": True,
-            },
-        ]
+FAKE_FINDINGS = [
+    {
+        "severity": "critical",
+        "message": "SQL 注入风险",
+        "file_path": "app/main.py",
+        "line_start": 10,
+        "code_snippet": "SELECT * FROM users",
+        "suggestion": "使用参数化查询",
+    },
+    {
+        "severity": "warning",
+        "message": "未使用的变量",
+        "file_path": "app/utils.py",
+        "line_start": 20,
+        "code_snippet": "unused = 1",
+        "suggestion": "删除未使用的变量",
+        "is_auto_fixable": True,
+    },
+]
 
 
 async def _create_review_with_findings(client):
@@ -37,10 +34,7 @@ async def _create_review_with_findings(client):
     })
     project = (await client.get("/api/v1/projects")).json()["items"][0]
 
-    with patch.dict(
-        "app.services.review_service.AGENT_REGISTRY",
-        {"security": (FakeAgent, "security", "security")},
-    ):
+    with patch_review_flow({"security": FAKE_FINDINGS}):
         resp = await client.post(
             "/api/v1/reviews/run",
             params={"project_id": project["id"], "review_type": "security"},

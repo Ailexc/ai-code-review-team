@@ -112,6 +112,23 @@ DOCS_CATALOG = [
         "description": "Git diff 场景、PR 审查流程",
         "icon": "📊",
     },
+    # 工程实践
+    {
+        "id": "performance-and-observability",
+        "title": "审查性能优化 + 过程可观测性",
+        "category": "practices",
+        "category_label": "工程实践",
+        "description": "Semgrep 本地化 / 跳过收尾 LLM / 步骤持久化（完整复盘）",
+        "icon": "⚡",
+    },
+    {
+        "id": "evaluation-driven-improvements",
+        "title": "系统评估驱动改进 — 竞态修复 / 编排对比 / 多语言真实支持",
+        "category": "practices",
+        "category_label": "工程实践",
+        "description": "五项改进落地复盘：并发竞态 / 模式开关 / 标准工具选型 / 国内镜像源实测",
+        "icon": "🔬",
+    },
 ]
 
 

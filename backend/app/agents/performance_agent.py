@@ -96,9 +96,25 @@ class PerformanceAgent(BaseAgent):
 
         findings = []
 
-        # 1. AST 静态分析（确定性工具层）
+        # 1. AST 静态分析（确定性工具层；可观测性：记录子步骤）
+        import time as _time
+        from app.services.review_steps import review_step_recorder
+
+        _t0 = _time.monotonic()
         try:
-            findings.extend(self._run_ast_analysis(path, file_paths))
+            ast_findings = self._run_ast_analysis(path, file_paths)
+            findings.extend(ast_findings)
+            _dur = int((_time.monotonic() - _t0) * 1000)
+            try:
+                await review_step_recorder.record_tool_substep(
+                    agent_name=self.name,
+                    node_type="ast_performance",
+                    action_text=f"🔍 AST 性能模式检测：命中 {len(ast_findings)} 条（{_dur / 1000:.1f}s）",
+                    duration_ms=_dur,
+                    detail={"findings": len(ast_findings)},
+                )
+            except Exception:
+                pass
         except Exception as e:
             logger.warning("AST 性能分析失败", error=str(e))
 
@@ -410,7 +426,8 @@ class PerformanceAgent(BaseAgent):
         """使用 LLM 进行语义性能分析（注入代码库上下文）"""
         try:
             from app.agents.llm_client import get_active_llm_config, run_llm_analysis
-            from app.agents.context_enhancer import agent_context
+            from app.agents.utils import collect_code_files_for_llm
+            from app.agents.context_enhancer import enhance_prompt
 
             config = await get_active_llm_config()
             if not config:
@@ -421,13 +438,11 @@ class PerformanceAgent(BaseAgent):
             if not files:
                 return []
 
-            # 构建代码库上下文
-            agent_context.build(str(path), file_paths)
-
+            # 代码库上下文引擎由 ReviewFlow 统一构建并经 ContextVar 传入（并发安全）
             prompts = [
                 (
                     fp,
-                    agent_context.enhance_prompt(
+                    enhance_prompt(
                         fp,
                         PERFORMANCE_PROMPT.format(file_path=fp, code_content=content),
                     ),

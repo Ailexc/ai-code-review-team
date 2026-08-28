@@ -112,15 +112,45 @@ class GitReviewAgent(BaseAgent):
 
         findings = []
 
+        # 可观测性：确定性扫描子步骤记录
+        import time as _time
+        from app.services.review_steps import review_step_recorder
+
         # 1. 提交规范检查
+        _t0 = _time.monotonic()
         try:
-            findings.extend(self._check_commit_conventions(path))
+            commit_findings = self._check_commit_conventions(path)
+            findings.extend(commit_findings)
+            _dur = int((_time.monotonic() - _t0) * 1000)
+            try:
+                await review_step_recorder.record_tool_substep(
+                    agent_name=self.name,
+                    node_type="git_commit_check",
+                    action_text=f"🔍 提交规范检查：命中 {len(commit_findings)} 条（{_dur / 1000:.1f}s）",
+                    duration_ms=_dur,
+                    detail={"findings": len(commit_findings)},
+                )
+            except Exception:
+                pass
         except Exception as e:
             logger.warning("提交规范检查失败", error=str(e))
 
         # 2. 分支策略检查
+        _t0 = _time.monotonic()
         try:
-            findings.extend(self._check_branch_strategy(path))
+            branch_findings = self._check_branch_strategy(path)
+            findings.extend(branch_findings)
+            _dur = int((_time.monotonic() - _t0) * 1000)
+            try:
+                await review_step_recorder.record_tool_substep(
+                    agent_name=self.name,
+                    node_type="git_branch_check",
+                    action_text=f"🔍 分支策略检查：命中 {len(branch_findings)} 条（{_dur / 1000:.1f}s）",
+                    duration_ms=_dur,
+                    detail={"findings": len(branch_findings)},
+                )
+            except Exception:
+                pass
         except Exception as e:
             logger.warning("分支策略检查失败", error=str(e))
 

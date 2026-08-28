@@ -19,6 +19,7 @@ class ReviewResponse(BaseModel):
     trigger_type: str
     status: str
     review_type: str
+    orchestration_mode: str = "parallel"  # parallel / hierarchical
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     duration_seconds: Optional[int] = None

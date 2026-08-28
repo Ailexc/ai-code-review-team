@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Card, Table, Tag, Button, message, Space, Switch, Popconfirm, Typography } from 'antd';
-import { ReloadOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { Card, Table, Tag, Button, message, Switch, Popconfirm, Collapse } from 'antd';
+import { ReloadOutlined, ThunderboltOutlined, SafetyCertificateOutlined, BulbOutlined } from '@ant-design/icons';
 import api from '@/api/index';
 
 interface Rule {
@@ -126,21 +126,49 @@ export default function RulesPage() {
   ];
 
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-        <div>
-          <h1 style={{ margin: 0 }}>审查规则</h1>
-          <Typography.Text type="secondary">
-            从历史审查记录中自动学习的团队规范，结合用户反馈动态调整权重
-          </Typography.Text>
+    <div className="page-container">
+      <div className="page-header">
+        <div className="page-header-icon"><SafetyCertificateOutlined /></div>
+        <div className="page-header-body">
+          <h1 className="page-header-title">审查规则</h1>
+          <p className="page-header-subtitle">从历史审查记录中自动学习的团队规范，结合用户反馈动态调整权重。</p>
         </div>
-        <Space>
+        <div className="page-header-actions">
           <Button icon={<ThunderboltOutlined />} loading={mining} onClick={handleMine}>
             从历史挖掘规则
           </Button>
           <Button icon={<ReloadOutlined />} onClick={fetchRules}>刷新</Button>
-        </Space>
+        </div>
       </div>
+
+      {/* 知识卡片：审查规则是什么 */}
+      <Collapse
+        className="knowledge-collapse"
+        items={[{
+          key: 'about',
+          label: (
+            <span>
+              <BulbOutlined className="knowledge-icon" />
+              <span className="knowledge-title">审查规则是什么？</span>
+              <span className="knowledge-hint">点击展开了解这个板块的用途</span>
+            </span>
+          ),
+          children: (
+            <div className="knowledge-body">
+              <p className="knowledge-lead">
+                审查规则是系统的「团队规范自动沉淀」——从历史审查记录里自己学习，越用越懂你们团队的代码偏好。
+              </p>
+              <ul className="knowledge-list">
+                <li><strong>自动挖掘：</strong>历史审查中反复出现的问题（≥3 次）会被自动提炼成一条规则。</li>
+                <li><strong>置信度与权重：</strong>问题出现次数越多，规则权重越高，代表越需要团队重视。</li>
+                <li><strong>持续学习：</strong>你在审查详情里把发现标记为「已确认 / 已解决 / 重新打开」时，会反向调整对应规则的权重——团队总忽略的会降权，总确认的会升权。</li>
+                <li><strong>三种来源：</strong>自动挖掘（auto）、用户反馈（feedback）、手动添加。</li>
+                <li><strong>可管理：</strong>每条规则都能在这里启用 / 禁用 / 删除，让规范随团队成长。</li>
+              </ul>
+            </div>
+          ),
+        }]}
+      />
 
       <Card>
         <Table

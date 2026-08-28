@@ -1,5 +1,6 @@
 """安全审查 Agent — 使用 Semgrep 进行静态安全分析 + LLM 智能分析"""
 
+import asyncio
 import json
 import subprocess
 from pathlib import Path
@@ -11,17 +12,30 @@ from app.agents.base import BaseAgent
 
 logger = structlog.get_logger()
 
-# Semgrep 规则集（按语言）
+# Semgrep 规则根目录（本地化，离线扫描）
+# 规则来自官方 semgrep/semgrep-rules 仓库（backend/app/data/semgrep-rules），
+# 无需每次联网下载 registry 规则，彻底离线、更快、规则更全面。
+RULES_ROOT = Path(__file__).resolve().parent.parent / "data" / "semgrep-rules"
+
+# Semgrep 规则集（按语言，本地目录路径）
+# python 拆分为主要安全框架规则集（并行扫描，展示粒度更好）；其他语言整目录。
 SEMGREP_RULESETS = {
     "python": [
-        "p/python", "p/flask", "p/django", "p/sqlalchemy",
-        "p/python_audit", "p/bandit",
+        str(RULES_ROOT / "python/django"),
+        str(RULES_ROOT / "python/flask"),
+        str(RULES_ROOT / "python/sqlalchemy"),
+        str(RULES_ROOT / "python/cryptography"),
+        str(RULES_ROOT / "python/requests"),
+        str(RULES_ROOT / "python/correctness"),
     ],
-    "javascript": ["p/javascript", "p/nodejs", "p/react", "p/expressjs"],
-    "typescript": ["p/typescript", "p/nodejs", "p/react", "p/expressjs"],
-    "java": ["p/java", "p/spring"],
-    "go": ["p/golang"],
-    "default": ["p/security-audit", "p/owasp-top-ten"],
+    "javascript": [str(RULES_ROOT / "javascript")],
+    "typescript": [str(RULES_ROOT / "typescript")],
+    "java": [str(RULES_ROOT / "java")],
+    "go": [str(RULES_ROOT / "go")],
+    "default": [
+        str(RULES_ROOT / "python/django"),
+        str(RULES_ROOT / "python/correctness"),
+    ],
 }
 
 # 严重程度映射
@@ -86,13 +100,50 @@ class SecurityAgent(BaseAgent):
 
         findings = []
 
-        # 1. Semgrep 静态分析
-        for ruleset in rulesets:
+        # 1. Semgrep 静态分析（本地规则集并行扫描）
+        # 注：_run_semgrep 使用同步 subprocess，必须放到线程池执行（asyncio.to_thread），
+        # 否则会阻塞事件循环；多个规则集通过 asyncio.gather 并行，避免串行拖慢整体。
+        # 可观测性：每个规则集记录一条子步骤（耗时 / 命中数 / 异常）。
+        from app.services.review_steps import review_step_recorder
+
+        async def _scan_one(ruleset: str) -> list[dict[str, Any]]:
+            ruleset_short = ruleset.replace(str(RULES_ROOT) + "/", "")
+            t0 = asyncio.get_event_loop().time()
             try:
-                results = self._run_semgrep(path, ruleset, file_paths)
-                findings.extend(results)
+                results = await asyncio.to_thread(
+                    self._run_semgrep, path, ruleset, file_paths
+                )
+                duration_ms = int((asyncio.get_event_loop().time() - t0) * 1000)
+                try:
+                    await review_step_recorder.record_tool_substep(
+                        agent_name=self.name,
+                        node_type="semgrep_ruleset",
+                        action_text=f"🔍 Semgrep 规则集 {ruleset_short}：命中 {len(results)} 条（{duration_ms / 1000:.1f}s）",
+                        duration_ms=duration_ms,
+                        detail={"ruleset": ruleset, "findings": len(results)},
+                    )
+                except Exception:
+                    pass
+                return results
             except Exception as e:
+                duration_ms = int((asyncio.get_event_loop().time() - t0) * 1000)
+                try:
+                    await review_step_recorder.record_tool_substep(
+                        agent_name=self.name,
+                        node_type="semgrep_ruleset",
+                        status="failed",
+                        action_text=f"⚠️ Semgrep 规则集 {ruleset_short} 执行失败：{str(e)[:100]}",
+                        duration_ms=duration_ms,
+                        detail={"ruleset": ruleset, "error": str(e)},
+                    )
+                except Exception:
+                    pass
                 logger.warning("Semgrep 规则集执行失败", ruleset=ruleset, error=str(e))
+                return []
+
+        results_list = await asyncio.gather(*[_scan_one(r) for r in rulesets])
+        for results in results_list:
+            findings.extend(results)
 
         # 2. LLM 智能分析（如果配置了 API Key）
         try:
@@ -122,7 +173,7 @@ class SecurityAgent(BaseAgent):
         try:
             from app.agents.llm_client import get_active_llm_config, run_llm_analysis
             from app.agents.utils import collect_code_files_for_llm
-            from app.agents.context_enhancer import agent_context
+            from app.agents.context_enhancer import enhance_prompt
 
             config = await get_active_llm_config()
             if not config:
@@ -133,13 +184,11 @@ class SecurityAgent(BaseAgent):
             if not files:
                 return []
 
-            # 构建代码库上下文（增强审查质量）
-            agent_context.build(str(path), file_paths)
-
+            # 代码库上下文引擎由 ReviewFlow 统一构建并经 ContextVar 传入（并发安全）
             prompts = [
                 (
                     fp,
-                    agent_context.enhance_prompt(
+                    enhance_prompt(
                         fp,
                         SECURITY_PROMPT.format(file_path=fp, code_content=content),
                     ),
@@ -166,6 +215,7 @@ class SecurityAgent(BaseAgent):
             "--config", config,
             "--json",
             "--no-git-ignore",
+            "--metrics", "off",  # 禁用遥测上报，避免联网失败导致异常退出
             "--timeout", "30",
             "--max-target-bytes", "1000000",
         ]

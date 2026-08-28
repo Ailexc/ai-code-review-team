@@ -3,7 +3,7 @@ import { Card, Button, Upload, Input, message, List, Space, Typography, Row, Col
 import {
   UploadOutlined, FolderOpenOutlined, FileTextOutlined, PlayCircleOutlined,
   SafetyOutlined, CodeOutlined, ExperimentOutlined, BugOutlined,
-  ThunderboltOutlined, StarFilled, BranchesOutlined, BookOutlined,
+  ThunderboltOutlined, StarFilled, BranchesOutlined, BookOutlined, BulbOutlined,
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { triggerApi, TriggerResult } from '@/api/triggerApi';
@@ -14,7 +14,7 @@ import ReviewProgress from '@/components/Review/ReviewProgress';
 const CAPABILITIES = [
   {
     key: 'security', title: '安全审查', icon: <SafetyOutlined />,
-    color: '#ff4d4f', gradient: 'linear-gradient(135deg, #ff4d4f 0%, #ff7875 100%)',
+    color: '#f43f5e', gradient: 'linear-gradient(135deg, #f43f5e 0%, #fb7185 100%)',
     tools: ['Semgrep', 'LLM'],
     description: '扫描代码中的安全漏洞，覆盖 OWASP Top 10 常见风险',
     dimensions: ['SQL 注入', 'XSS', '命令注入', 'eval 使用', '硬编码密码', '不安全反序列化'],
@@ -25,7 +25,7 @@ const CAPABILITIES = [
   },
   {
     key: 'code_style', title: '规范审查', icon: <CodeOutlined />,
-    color: '#faad14', gradient: 'linear-gradient(135deg, #faad14 0%, #ffc53d 100%)',
+    color: '#f59e0b', gradient: 'linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%)',
     tools: ['Ruff', 'LLM'],
     description: '检查代码规范和可维护性，自动识别可修复的问题',
     dimensions: ['命名规范', '函数复杂度', 'import 排序', '类型注解', '重复代码'],
@@ -36,7 +36,7 @@ const CAPABILITIES = [
   },
   {
     key: 'dependency', title: '依赖审查', icon: <ExperimentOutlined />,
-    color: '#1677ff', gradient: 'linear-gradient(135deg, #1677ff 0%, #4096ff 100%)',
+    color: '#4f46e5', gradient: 'linear-gradient(135deg, #4f46e5 0%, #6366f1 100%)',
     tools: ['pip-audit', 'npm registry', 'LLM'],
     description: '检测项目依赖中的已知漏洞和过时版本',
     dimensions: ['CVE 漏洞', '过时依赖', '版本风险评估', '依赖锁文件分析'],
@@ -47,7 +47,7 @@ const CAPABILITIES = [
   },
   {
     key: 'test_coverage', title: '测试覆盖', icon: <BugOutlined />,
-    color: '#52c41a', gradient: 'linear-gradient(135deg, #52c41a 0%, #73d13d 100%)',
+    color: '#10b981', gradient: 'linear-gradient(135deg, #10b981 0%, #34d399 100%)',
     tools: ['AST 分析', 'LLM'],
     description: '识别代码中未被测试覆盖的函数和缺失的测试文件',
     dimensions: ['未测试函数', '缺失测试目录', '私有函数过滤', '测试建议生成'],
@@ -58,7 +58,7 @@ const CAPABILITIES = [
   },
   {
     key: 'performance', title: '性能分析', icon: <ThunderboltOutlined />,
-    color: '#722ed1', gradient: 'linear-gradient(135deg, #722ed1 0%, #9254de 100%)',
+    color: '#8b5cf6', gradient: 'linear-gradient(135deg, #8b5cf6 0%, #a78bfa 100%)',
     tools: ['AST 分析', 'LLM'],
     description: '检测 Python 代码中的性能反模式和瓶颈',
     dimensions: ['N+1 查询', '同步阻塞', '字符串拼接', '无限制查询', '内存问题'],
@@ -69,7 +69,7 @@ const CAPABILITIES = [
   },
   {
     key: 'git_review', title: 'Git 审查', icon: <BranchesOutlined />,
-    color: '#13c2c2', gradient: 'linear-gradient(135deg, #13c2c2 0%, #36cfc9 100%)',
+    color: '#14b8a6', gradient: 'linear-gradient(135deg, #14b8a6 0%, #2dd4bf 100%)',
     tools: ['GitPython', 'LLM'],
     description: '分析 Git 仓库的提交规范和分支健康度',
     dimensions: ['提交规范', '分支策略', '文件热点', '提交频率', '消息质量'],
@@ -80,13 +80,13 @@ const CAPABILITIES = [
   },
   {
     key: 'full', title: '综合审查', icon: <StarFilled />,
-    color: '#f5222d', gradient: 'linear-gradient(135deg, #f5222d 0%, #ff4d4f 50%, #faad14 100%)',
+    color: '#f43f5e', gradient: 'linear-gradient(135deg, #f43f5e 0%, #f43f5e 50%, #f59e0b 100%)',
     tools: ['全部 6 个 Agent'],
     description: '并行运行全部 Agent，一次性发现所有维度的问题',
     dimensions: ['安全 + 规范 + 依赖 + 测试 + 性能 + Git'],
     avgTime: '3-5min',
     output: '全维度问题汇总 + 按严重度排序',
-    principle: '通过 asyncio.gather 并行启动全部 6 个 Agent，各自独立分析后聚合结果：去重、按严重度排序、计算健康度评分。这是多 Agent 协作的核心演示。',
+    principle: '采用 CrewAI Flows + Crews 双层架构：外层 Flow 用 @start/@listen 装饰器做确定性编排（解析 → 并行分派 → 聚合 → 报告），内层每个专业 Agent 是独立 Crew（Agent + Task + 工具），并行由 Flow 的多 @listen 节点提供。这是多 Agent 协作的核心演示，也是本项目学习 CrewAI 的主路径。',
     docCategory: 'architecture', docId: 'multi-agent-orchestration',
     recommended: true,
   },
@@ -102,6 +102,7 @@ export default function ReviewTrigger() {
   const [loading, setLoading] = useState(false);
   const [progressOpen, setProgressOpen] = useState(false);
   const [reviewType, setReviewType] = useState('full');
+  const [orchestrationMode, setOrchestrationMode] = useState<'parallel' | 'hierarchical'>('parallel');
 
   const [code, setCode] = useState('');
   const [filename, setFilename] = useState('pasted_code.py');
@@ -166,10 +167,25 @@ export default function ReviewTrigger() {
 
   return (
     <div>
-      <h1>审查能力中心</h1>
-      <Typography.Paragraph type="secondary" style={{ marginBottom: 24, fontSize: 15 }}>
-        选择一种审查能力，了解它的检测维度和实现原理，然后选择项目和触发方式开始审查。
-      </Typography.Paragraph>
+      <div className="page-header">
+        <div className="page-header-icon"><ThunderboltOutlined /></div>
+        <div className="page-header-body">
+          <h1 className="page-header-title">审查能力中心</h1>
+          <p className="page-header-subtitle">选择一种审查能力，了解它的检测维度和实现原理，然后选择项目和触发方式开始审查。</p>
+        </div>
+      </div>
+
+      {/* 学习/演示引导：双层架构观察 */}
+      <Card size="small" style={{ marginBottom: 16, background: 'linear-gradient(135deg, rgba(16,185,129,0.07), rgba(59,130,246,0.04))', borderColor: 'rgba(16,185,129,0.28)' }}>
+        <Space direction="vertical" size={2}>
+          <Typography.Text strong><BulbOutlined style={{ color: '#10b981', marginRight: 8 }} />学习观察（真实执行，非模拟）：</Typography.Text>
+          <Typography.Text type="secondary" style={{ fontSize: 13 }}>
+            选择<strong>单个 Agent</strong>（安全/规范/依赖等）触发，即为<strong>快速演示模式</strong>——用真实 LLM + 真实工具完整跑通
+            「外层 Flow（解析 → 并行 Crew → 聚合 → 报告）+ 内层 Crew（Agent 自主调用工具）」双层架构，实时观察每个节点流转。
+            选择「综合审查」则 6 个 Crew 并行执行，观察完整双层编排。
+          </Typography.Text>
+        </Space>
+      </Card>
 
       {/* 顶部选项卡 */}
       <Card size="small" style={{ marginBottom: 16 }}>
@@ -188,6 +204,23 @@ export default function ReviewTrigger() {
           }))}
           style={{ width: '100%', overflowX: 'auto' }}
         />
+        {/* 编排模式切换（学习对比：并行 vs 派发） */}
+        <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <Typography.Text type="secondary" style={{ fontSize: 13 }}>编排模式：</Typography.Text>
+          <Segmented
+            value={orchestrationMode}
+            onChange={(v) => setOrchestrationMode(v as 'parallel' | 'hierarchical')}
+            options={[
+              { value: 'parallel', label: '并行模式（默认）' },
+              { value: 'hierarchical', label: '派发模式（实验）' },
+            ]}
+          />
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            {orchestrationMode === 'parallel'
+              ? '6 个独立 Crew 并行执行，代码层去重聚合 —— 快、省 token、结果稳定'
+              : 'Manager LLM 统一调度全部 Agent，可互相委派 —— 消耗数倍 token，输出依赖模型能力，用于对比学习'}
+          </Typography.Text>
+        </div>
       </Card>
 
       {/* 能力介绍折叠块 */}
@@ -238,14 +271,14 @@ export default function ReviewTrigger() {
 
       {/* 触发区域 */}
       <Card
-        title={<Space><span style={{ color: cap.color }}>{cap.icon}</span>🚀 选择项目并触发 {cap.title}</Space>}
+        title={<Space><span style={{ color: cap.color }}>{cap.icon}</span>选择项目并触发 {cap.title}</Space>}
         style={{ marginBottom: 16 }}
       >
         <Space direction="vertical" style={{ width: '100%' }} size="middle">
           <div>
             <Typography.Text strong>选择项目</Typography.Text>
             <select
-              style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #d9d9d9', marginTop: 4 }}
+              style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #e2e8f0', marginTop: 4 }}
               value={selectedProject || ''}
               onChange={e => setSelectedProject(e.target.value || undefined)}
             >
@@ -290,7 +323,7 @@ export default function ReviewTrigger() {
           )}
           {triggerMethod === 'upload' && (
             <Upload.Dragger accept=".py,.js,.ts,.tsx,.jsx,.java,.go,.zip,.tar.gz,.tgz" beforeUpload={handleUpload} showUploadList={false}>
-              <p style={{ fontSize: 40, color: '#1677ff' }}><UploadOutlined /></p>
+              <p style={{ fontSize: 40, color: '#4f46e5' }}><UploadOutlined /></p>
               <p>点击或拖拽文件到此处上传</p>
               <p style={{ color: '#999' }}>支持代码文件和压缩包</p>
             </Upload.Dragger>
@@ -304,6 +337,7 @@ export default function ReviewTrigger() {
         mode="inline"
         projectId={selectedProject || ''}
         reviewType={reviewType}
+        orchestrationMode={orchestrationMode}
         open={progressOpen}
         onClose={() => setProgressOpen(false)}
         onCompleted={handleProgressCompleted}

@@ -13,7 +13,10 @@ from app.core.database import get_db
 from app.models.review import Review
 from app.models.finding import Finding
 from app.models.project import Project
+from app.models.review_step import ReviewStep
+from app.models.llm_call_log import LLMCallLog
 from app.schemas.review import ReviewCreate, ReviewResponse
+from app.schemas.review_step import ReviewStepResponse, LLMLogResponse
 from app.services.review_service import ReviewService
 from app.services.report_generator import ReportGenerator
 
@@ -59,6 +62,7 @@ async def run_review(
     project_id: str,
     review_type: str = "full",
     trigger_type: str = "manual",
+    orchestration_mode: str = "parallel",
     db: AsyncSession = Depends(get_db),
 ):
     """执行审查 — 触发安全扫描并返回结果（同步，阻塞至完成）"""
@@ -73,6 +77,7 @@ async def run_review(
             project=project,
             review_type=review_type,
             trigger_type=trigger_type,
+            orchestration_mode=orchestration_mode if orchestration_mode in ("parallel", "hierarchical") else "parallel",
         )
         return ReviewResponse.model_validate(review)
     except Exception as e:
@@ -122,6 +127,7 @@ async def run_review_async(
     project_id: str,
     review_type: str = "full",
     trigger_type: str = "manual",
+    orchestration_mode: str = "parallel",
     db: AsyncSession = Depends(get_db),
 ):
     """异步执行审查 — 立即返回 running 状态，后台执行
@@ -131,6 +137,8 @@ async def run_review_async(
     import asyncio
 
     from app.core.database import async_session_factory
+
+    mode_val = orchestration_mode if orchestration_mode in ("parallel", "hierarchical") else "parallel"
 
     project_result = await db.execute(select(Project).where(Project.id == project_id))
     project = project_result.scalar_one_or_none()
@@ -145,6 +153,7 @@ async def run_review_async(
         project_id=project.id,
         trigger_type=trigger_type,
         review_type=review_type,
+        orchestration_mode=mode_val,
         status="running",
         started_at=datetime.now(timezone.utc),
     )
@@ -167,6 +176,7 @@ async def run_review_async(
                     review_type=review_type_val,
                     trigger_type=trigger_type_val,
                     existing_review_id=review_id,
+                    orchestration_mode=mode_val,
                 )
                 await bg_db.commit()
             except Exception as e:
@@ -217,6 +227,53 @@ async def get_review(
     if not review:
         raise HTTPException(status_code=404, detail="审查不存在")
     return ReviewResponse.model_validate(review)
+
+
+@router.get("/{review_id}/steps", response_model=list[ReviewStepResponse])
+async def get_review_steps(
+    review_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """获取审查执行步骤时间线（可观测性：每一步做了什么 / 耗时 / 跳过或异常）"""
+    result = await db.execute(
+        select(ReviewStep)
+        .where(ReviewStep.review_id == review_id)
+        # 并行步骤 sequence 可能重复，用 created_at 兜底保证时间线稳定
+        .order_by(ReviewStep.sequence, ReviewStep.created_at)
+    )
+    steps = result.scalars().all()
+    return [ReviewStepResponse.model_validate(s) for s in steps]
+
+
+@router.get("/{review_id}/llm-logs/{log_id}", response_model=LLMLogResponse)
+async def get_llm_log(
+    review_id: str,
+    log_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """获取单次 LLM 调用的完整输入输出（提示词/响应原文，供前端「查看全文」）"""
+    result = await db.execute(
+        select(LLMCallLog).where(LLMCallLog.id == log_id, LLMCallLog.review_id == review_id)
+    )
+    log = result.scalar_one_or_none()
+    if not log:
+        raise HTTPException(status_code=404, detail="LLM 调用记录不存在")
+    return LLMLogResponse.model_validate(log)
+
+
+@router.get("/{review_id}/llm-logs", response_model=list[LLMLogResponse])
+async def list_llm_logs(
+    review_id: str,
+    agent_name: str = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """列出本次审查全部 LLM 调用档案（可按 Agent 过滤；用于 token 汇总与学习回放）"""
+    query = select(LLMCallLog).where(LLMCallLog.review_id == review_id)
+    if agent_name:
+        query = query.where(LLMCallLog.agent_name == agent_name)
+    query = query.order_by(LLMCallLog.seq)
+    result = await db.execute(query)
+    return [LLMLogResponse.model_validate(l) for l in result.scalars().all()]
 
 
 @router.get("/{review_id}/report", response_class=PlainTextResponse)

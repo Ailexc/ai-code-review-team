@@ -104,13 +104,12 @@ export default function ProjectDetail() {
 
   return (
     <div>
-      <Space style={{ marginBottom: 16 }}>
-        <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/projects')}>返回列表</Button>
-      </Space>
-
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-        <h1 style={{ margin: 0 }}>{project.name}</h1>
-        <Space>
+      <div className="page-header">
+        <div className="page-header-body">
+          <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate('/projects')} style={{ marginBottom: 6, paddingLeft: 0 }}>返回列表</Button>
+          <h1 className="page-header-title">{project.name}</h1>
+        </div>
+        <div className="page-header-actions">
           <Button icon={<EditOutlined />} onClick={() => {
             form.setFieldsValue({
               name: project.name,
@@ -138,7 +137,7 @@ export default function ProjectDetail() {
           />
           <Button type="primary" icon={<SafetyOutlined />} onClick={handleRunReview}>开始审查</Button>
           <Button icon={<ThunderboltOutlined />} loading={incrementalLoading} onClick={handleIncrementalReview}>增量审查(PR)</Button>
-        </Space>
+        </div>
       </div>
 
       <Descriptions bordered column={1} style={{ marginBottom: 24 }}>

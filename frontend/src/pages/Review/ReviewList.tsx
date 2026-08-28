@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Table, Tag, Button, message, Space } from 'antd';
-import { ReloadOutlined } from '@ant-design/icons';
+import { ReloadOutlined, FileSearchOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import api from '@/api/index';
 import dayjs from 'dayjs';
@@ -72,10 +72,16 @@ export default function ReviewList() {
   ];
 
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-        <h1>审查记录</h1>
-        <Button icon={<ReloadOutlined />} onClick={fetchReviews}>刷新</Button>
+    <div className="page-container">
+      <div className="page-header">
+        <div className="page-header-icon"><FileSearchOutlined /></div>
+        <div className="page-header-body">
+          <h1 className="page-header-title">审查记录</h1>
+          <p className="page-header-subtitle">全部代码审查任务的执行历史与结果汇总。</p>
+        </div>
+        <div className="page-header-actions">
+          <Button icon={<ReloadOutlined />} onClick={fetchReviews}>刷新</Button>
+        </div>
       </div>
       <Table
         dataSource={reviews}

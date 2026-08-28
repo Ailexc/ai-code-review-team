@@ -3,7 +3,8 @@
 import asyncio
 
 import pytest
-from unittest.mock import patch
+
+from helpers import patch_review_flow
 
 
 def _sample_project():
@@ -15,16 +16,10 @@ async def test_run_async_returns_running_then_completes(client):
     """run-async 应立即返回 running，后台完成后可轮询到 completed"""
     project_id = (await client.post("/api/v1/projects", json=_sample_project())).json()["id"]
 
-    class FakeAgent:
-        async def analyze(self, project_path, file_paths=None):
-            await asyncio.sleep(0.05)  # 模拟耗时
-            return [{"rule_id": "ASYNC-1", "severity": "warning", "message": "异步测试发现", "file_path": "a.py", "line_start": 1}]
+    findings = [{"rule_id": "ASYNC-1", "severity": "warning", "message": "异步测试发现", "file_path": "a.py", "line_start": 1}]
 
-    # patch 需覆盖整个轮询过程，确保后台任务也使用 mock Agent
-    with patch.dict(
-        "app.services.review_service.AGENT_REGISTRY",
-        {"security": (FakeAgent, "security", "security")},
-    ):
+    # patch 需覆盖整个轮询过程，确保后台任务也使用 mock 编排层
+    with patch_review_flow({"security": findings}):
         resp = await client.post(
             "/api/v1/reviews/run-async",
             params={"project_id": project_id, "review_type": "security"},

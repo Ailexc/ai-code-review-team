@@ -18,6 +18,26 @@
 - **触发方式**：本地目录 / 代码粘贴 / 文件上传 / CLI / 增量 diff
 - **LLM 配置**：支持 OpenAI / DeepSeek / Ollama / 自定义，API Key 加密存储 + 一键测试
 
+### 语言支持能力矩阵（真实工具，非模拟）
+
+| Agent | Python | TypeScript/JS | Go |
+|---|---|---|---|
+| 🔒 安全审查 | Semgrep（337 规则）+ LLM | Semgrep（203 规则）+ LLM | Semgrep（78 规则）+ LLM |
+| 📐 代码规范 | Ruff | **ESLint 9** + typescript-eslint | **golangci-lint** |
+| 📦 依赖审查 | pip-audit | npm audit + npm outdated | **OSV-Scanner** |
+| 🧪 测试覆盖 | AST 分析 + LLM | LLM 语义层 | LLM 语义层 |
+| ⚡ 性能分析 | AST 模式检测 + LLM | LLM 语义层 | LLM 语义层 |
+| 🧬 Git 审查 | ✅ 语言无关 | ✅ | ✅ |
+
+> 原则：确定性层只用各生态的官方标准工具（Ruff/ESLint/golangci-lint/pip-audit/npm audit/OSV-Scanner/Semgrep），
+> 不做模拟或降级实现；无标准工具等价物的维度（覆盖/性能的非 Python 分析）明确标注由 LLM 语义层承担。
+
+### 编排模式（学习对比）
+
+- ⚡ **并行模式**（默认）：6 个独立 Crew 并行执行 → 代码层去重聚合。快、省 token、结果稳定
+- 🎯 **派发模式**（实验）：单个 Crew 容纳全部 Agent，`Process.hierarchical` 由 Manager LLM 统一调度，
+  Agent 可互相委派。消耗数倍 token，输出依赖模型能力 —— 用于对比两种编排范式的能力差异
+
 ## 快速开始
 
 ### Docker（推荐）
@@ -46,7 +66,7 @@ cd frontend && npm install && npm run dev
 ## 测试
 
 ```bash
-# 后端集成测试（72 个，容器内运行）
+# 后端集成测试（140 个，容器内运行）
 docker exec -w /app aicodereviewteam-backend-1 python -m pytest tests/ -v
 
 # 或本地
@@ -90,7 +110,7 @@ AICodeReviewTeam/
 │   │   ├── api/v1/        # REST + WebSocket 端点
 │   │   ├── triggers/      # 触发器（目录/粘贴/上传/CLI）
 │   │   └── models/        # 数据模型
-│   └── tests/            # 72 个集成测试
+│   └── tests/            # 140 个集成测试
 ├── frontend/
 │   └── src/              # 仪表盘/项目/审查/设置/进度组件
 ├── plans/                # 架构与开发规划

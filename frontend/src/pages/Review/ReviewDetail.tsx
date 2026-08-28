@@ -1,13 +1,17 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Card, Tag, Button, message, Spin, Space, List, Typography, Alert, Descriptions, Dropdown, Modal } from 'antd';
+import { Card, Tag, Button, message, Spin, Space, List, Typography, Alert, Descriptions, Dropdown, Modal, Timeline, Collapse, Tooltip } from 'antd';
 import {
   ArrowLeftOutlined, ExclamationCircleOutlined, WarningOutlined, InfoCircleOutlined,
   DownloadOutlined, EyeOutlined, MoreOutlined, CheckCircleOutlined, UndoOutlined,
-  ThunderboltOutlined,
+  ThunderboltOutlined, MinusCircleOutlined, LoadingOutlined,
+  RobotOutlined, ToolOutlined, FileTextOutlined, BulbOutlined, RightOutlined,
+  ApartmentOutlined, ExportOutlined, ImportOutlined, FolderOutlined,
 } from '@ant-design/icons';
 import api from '@/api/index';
 import dayjs from 'dayjs';
+import { KNOWLEDGE_CARDS, INNER_CREW_CARD, AGGREGATE_CARD, GENERATE_REPORT_CARD, KnowledgeCard } from '@/constants/stepKnowledge';
+import { triggerApi } from '@/api/triggerApi';
 
 interface Finding {
   id: string;
@@ -30,6 +34,7 @@ interface Review {
   trigger_type: string;
   status: string;
   review_type: string;
+  orchestration_mode?: string;
   total_findings: number;
   critical_count: number;
   warning_count: number;
@@ -40,15 +45,65 @@ interface Review {
   duration_seconds: number | null;
 }
 
+// 审查执行步骤（可观测性）
+interface ReviewStep {
+  id: string;
+  review_id: string;
+  sequence: number;
+  phase: string;
+  node_type: string;
+  agent_name: string | null;
+  status: string;
+  action_text: string | null;
+  input_summary: string | null;
+  output_summary: string | null;
+  started_at: string | null;
+  ended_at: string | null;
+  duration_ms: number | null;
+  detail: Record<string, unknown> | null;
+}
+
+const AGENT_LABELS: Record<string, string> = {
+  security: '安全审查',
+  code_style: '代码规范',
+  dependency: '依赖审查',
+  test_coverage: '测试覆盖',
+  performance: '性能分析',
+  git_review: 'Git 审查',
+  hierarchical: '派发模式 Manager',
+};
+
+// LLM 调用全文档案
+interface LLMLog {
+  id: string;
+  agent_name: string | null;
+  source: string;
+  call_type: string | null;
+  model: string | null;
+  messages: { role: string; content: string }[] | null;
+  response: string | null;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  latency_ms: number | null;
+}
+
 export default function ReviewDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [review, setReview] = useState<Review | null>(null);
   const [findings, setFindings] = useState<Finding[]>([]);
+  const [steps, setSteps] = useState<ReviewStep[]>([]);
   const [loading, setLoading] = useState(true);
   const [autofixOpen, setAutofixOpen] = useState(false);
   const [autofixResult, setAutofixResult] = useState<Record<string, unknown> | null>(null);
   const [autofixLoading, setAutofixLoading] = useState(false);
+  const [llmLogOpen, setLlmLogOpen] = useState(false);
+  const [llmLog, setLlmLog] = useState<LLMLog | null>(null);
+  const [llmLogLoading, setLlmLogLoading] = useState(false);
+  const [liveSteps, setLiveSteps] = useState(false); // WS 实时订阅中
+  const wsRef = useRef<WebSocket | null>(null);
+  const refetchTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -56,14 +111,63 @@ export default function ReviewDetail() {
     Promise.all([
       api.get(`/reviews/${id}`),
       api.get(`/findings?review_id=${id}`),
+      api.get(`/reviews/${id}/steps`),
     ])
-      .then(([reviewData, findingsData]) => {
+      .then(([reviewData, findingsData, stepsData]) => {
         setReview(reviewData as unknown as Review);
         setFindings(findingsData as unknown as Finding[]);
+        setSteps(stepsData as unknown as ReviewStep[]);
       })
       .catch(() => message.error('获取审查详情失败'))
       .finally(() => setLoading(false));
   }, [id]);
+
+  // 审查运行中：订阅 WS，子步骤实时刷新（节流 800ms 合并多次事件为一次拉取）
+  useEffect(() => {
+    if (!id || !review || review.status !== 'running') return;
+    setLiveSteps(true);
+    const scheduleRefetch = () => {
+      if (refetchTimerRef.current != null) return;
+      refetchTimerRef.current = window.setTimeout(() => {
+        refetchTimerRef.current = null;
+        api.get(`/reviews/${id}/steps`)
+          .then((data) => setSteps(data as unknown as ReviewStep[]))
+          .catch(() => {});
+      }, 800);
+    };
+
+    let closed = false;
+    const ws = new WebSocket(triggerApi.reviewWsUrl(id));
+    wsRef.current = ws;
+    ws.onmessage = (e) => {
+      try {
+        const ev = JSON.parse(e.data);
+        if (ev.event === 'ping' || ev.event === 'connected') return;
+        scheduleRefetch();
+        if (ev.event === 'review_completed' || ev.event === 'review_failed') {
+          // 终态：补拉审查摘要后关闭订阅
+          setTimeout(() => {
+            api.get(`/reviews/${id}`).then((d) => setReview(d as unknown as Review)).catch(() => {});
+            api.get(`/reviews/${id}/steps`).then((data) => setSteps(data as unknown as ReviewStep[])).catch(() => {});
+            try { ws.close(); } catch { /* noop */ }
+          }, 500);
+        }
+      } catch { /* 忽略非 JSON 消息 */ }
+    };
+    ws.onerror = () => { /* 静默：详情页实时性非关键 */ };
+    ws.onclose = () => { if (!closed) setLiveSteps(false); };
+
+    return () => {
+      closed = true;
+      if (refetchTimerRef.current != null) {
+        window.clearTimeout(refetchTimerRef.current);
+        refetchTimerRef.current = null;
+      }
+      try { ws.close(); } catch { /* noop */ }
+      wsRef.current = null;
+      setLiveSteps(false);
+    };
+  }, [id, review?.status]);
 
   const handleDownloadReport = () => {
     if (!id) return;
@@ -101,6 +205,21 @@ export default function ReviewDetail() {
     }
   };
 
+  const handleViewTranscript = async (transcriptId: string) => {
+    if (!id) return;
+    setLlmLogLoading(true);
+    setLlmLogOpen(true);
+    try {
+      const log = await api.get(`/reviews/${id}/llm-logs/${transcriptId}`) as unknown as LLMLog;
+      setLlmLog(log);
+    } catch {
+      message.error('获取 LLM 调用全文失败');
+      setLlmLogOpen(false);
+    } finally {
+      setLlmLogLoading(false);
+    }
+  };
+
   const statusBadge: Record<string, { color: string; text: string }> = {
     open: { color: 'processing', text: '待处理' },
     acknowledged: { color: 'warning', text: '已确认' },
@@ -112,9 +231,9 @@ export default function ReviewDetail() {
 
   const severityIcon = (severity: string) => {
     switch (severity) {
-      case 'critical': return <ExclamationCircleOutlined style={{ color: '#ff4d4f' }} />;
-      case 'warning': return <WarningOutlined style={{ color: '#faad14' }} />;
-      default: return <InfoCircleOutlined style={{ color: '#1677ff' }} />;
+      case 'critical': return <ExclamationCircleOutlined style={{ color: '#f43f5e' }} />;
+      case 'warning': return <WarningOutlined style={{ color: '#f59e0b' }} />;
+      default: return <InfoCircleOutlined style={{ color: '#4f46e5' }} />;
     }
   };
 
@@ -125,19 +244,162 @@ export default function ReviewDetail() {
     nitpick: 'default',
   };
 
+  // ---- 执行流程时间线辅助 ----
+  const stepIcon = (status: string) => {
+    if (status === 'completed') return <CheckCircleOutlined style={{ color: '#10b981' }} />;
+    if (status === 'skipped') return <MinusCircleOutlined style={{ color: '#bfbfbf' }} />;
+    if (status === 'failed') return <ExclamationCircleOutlined style={{ color: '#f43f5e' }} />;
+    return <LoadingOutlined />;
+  };
+
+  const stepTitle = (s: ReviewStep) => {
+    // 内层 Crew 节点：run_<agent>_crew
+    if (s.phase === 'inner_crew' && s.agent_name) {
+      return AGENT_LABELS[s.agent_name] || s.agent_name;
+    }
+    const labels: Record<string, string> = {
+      parse_project: '① 解析项目',
+      aggregate: '③ 聚合结果',
+      generate_report: '④ 生成摘要',
+      skip_agent: '跳过 Agent',
+    };
+    return labels[s.node_type] || s.node_type;
+  };
+
+  const stepStatusTag = (s: ReviewStep) => {
+    if (s.status === 'completed') return <Tag color="green">完成</Tag>;
+    if (s.status === 'skipped') return <Tag>跳过</Tag>;
+    if (s.status === 'failed') return <Tag color="red">失败</Tag>;
+    return <Tag color="processing">进行中</Tag>;
+  };
+
+  // ---- 深度可观测性：父子步骤树 + 知识卡片 + 全文档案 ----
+
+  const knowledgeFor = (s: ReviewStep): KnowledgeCard | null => {
+    if (s.phase === 'inner_crew') return INNER_CREW_CARD;
+    if (s.node_type === 'aggregate') return AGGREGATE_CARD;
+    if (s.node_type === 'generate_report') return GENERATE_REPORT_CARD;
+    return KNOWLEDGE_CARDS[s.node_type] || null;
+  };
+
+  /** 知识卡片（💡 为什么）+ 源码位置 */
+  const knowledgePanel = (s: ReviewStep) => {
+    const card = knowledgeFor(s);
+    if (!card) return null;
+    return (
+      <div style={{ marginTop: 6, padding: '8px 10px', background: '#f6f8fa', borderRadius: 6, border: '1px solid #e8e8e8' }}>
+        <div style={{ fontSize: 13, color: '#444' }}>
+          <BulbOutlined style={{ color: '#f59e0b', marginRight: 6 }} />
+          <Typography.Text type="secondary" strong>为什么：</Typography.Text>
+          {card.text}
+        </div>
+        {card.refs && card.refs.length > 0 && (
+          <div style={{ marginTop: 4, fontSize: 12, color: '#888' }}>
+            <FolderOutlined style={{ marginRight: 6, fontSize: 12 }} />源码：
+            {card.refs.map((r, i) => (
+              <Tooltip key={i} title={r.desc}>
+                <Typography.Text code copyable={false} style={{ marginRight: 8, fontSize: 12 }}>
+                  {r.file}{r.line ? `:${r.line}` : ''}
+                </Typography.Text>
+              </Tooltip>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  /** detail 字段 → 小标签（tokens / 规则集统计 / 缓存等） */
+  const detailChips = (detail: Record<string, unknown> | null) => {
+    if (!detail) return null;
+    const chips: React.ReactNode[] = [];
+    const pt = detail.prompt_tokens as number | undefined;
+    const ct = detail.completion_tokens as number | undefined;
+    if (pt != null || ct != null) {
+      chips.push(<Tag key="tok" color="geekblue">tokens {pt ?? 0}+{ct ?? 0}</Tag>);
+    }
+    if (detail.model) chips.push(<Tag key="model">{String(detail.model)}</Tag>);
+    if (detail.from_cache === true) chips.push(<Tag key="cache" color="orange">命中缓存</Tag>);
+    if (typeof detail.findings === 'number') chips.push(<Tag key="f" color="cyan">发现 {detail.findings}</Tag>);
+    if (typeof detail.ruleset === 'string') {
+      chips.push(<Tag key="rs" title={String(detail.ruleset)}>{String(detail.ruleset).split('/').slice(-2).join('/')}</Tag>);
+    }
+    if (typeof detail.tool_name === 'string') chips.push(<Tag key="tn" color="purple">{detail.tool_name}</Tag>);
+    return chips.length > 0 ? <div style={{ marginTop: 2 }}>{chips}</div> : null;
+  };
+
+  /** 子步骤行（tool / llm 粒度） */
+  const childStepRow = (c: ReviewStep) => {
+    const isLlm = c.phase === 'llm';
+    const transcriptId = (c.detail?.transcript_id as string | undefined);
+    return (
+      <div key={c.id} style={{ display: 'flex', gap: 8, padding: '5px 0', borderBottom: '1px dashed #f0f0f0' }}>
+        <span style={{ color: isLlm ? '#8b5cf6' : '#14b8a6', flexShrink: 0, paddingTop: 1 }}>
+          {isLlm ? <RobotOutlined /> : <ToolOutlined />}
+        </span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div>
+            {c.action_text}
+            {c.duration_ms != null && (
+              <Typography.Text type="secondary" style={{ marginLeft: 6, fontSize: 12 }}>
+                {c.duration_ms >= 1000 ? `${(c.duration_ms / 1000).toFixed(1)}s` : `${c.duration_ms}ms`}
+              </Typography.Text>
+            )}
+            {c.status === 'failed' && <Tag color="red" style={{ marginLeft: 6 }}>失败</Tag>}
+          </div>
+          {detailChips(c.detail)}
+          {isLlm && transcriptId && (
+            <Button
+              type="link"
+              size="small"
+              icon={<FileTextOutlined />}
+              style={{ padding: 0, marginRight: 12 }}
+              onClick={() => handleViewTranscript(transcriptId)}
+            >
+              查看全文（提示词/响应原文）
+            </Button>
+          )}
+          {knowledgePanel(c)}
+        </div>
+      </div>
+    );
+  };
+
+  /** 耗时占比条（相对最耗时父步骤） */
+  const durationBar = (s: ReviewStep, maxDur: number) => {
+    if (!s.duration_ms || maxDur <= 0 || s.status === 'skipped') return null;
+    const pct = Math.max(2, Math.round((s.duration_ms / maxDur) * 100));
+    return (
+      <Tooltip title={`占最耗时步骤的 ${pct}%`}>
+        <div style={{ height: 4, background: '#f0f0f0', borderRadius: 2, marginTop: 4, width: '60%' }}>
+          <div style={{ height: 4, width: `${pct}%`, background: s.phase === 'inner_crew' ? '#8b5cf6' : '#4f46e5', borderRadius: 2 }} />
+        </div>
+      </Tooltip>
+    );
+  };
+
+  // 组装父子树：父 = outer_flow / inner_crew；子 = tool / llm（按 agent_name 归属到内层 Crew）
+  const parentSteps = steps.filter((s) => s.phase === 'outer_flow' || s.phase === 'inner_crew');
+  const childSteps = steps.filter((s) => s.phase === 'tool' || s.phase === 'llm');
+  const childrenByAgent: Record<string, ReviewStep[]> = {};
+  for (const c of childSteps) {
+    const key = c.agent_name || '_unknown_';
+    (childrenByAgent[key] ||= []).push(c);
+  }
+  const maxParentDur = Math.max(...parentSteps.map((s) => s.duration_ms || 0), 0);
+
   return (
     <div>
-      <Space style={{ marginBottom: 16 }}>
-        <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/reviews')}>返回列表</Button>
-      </Space>
-
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-        <h1>审查详情</h1>
-        <Space>
+      <div className="page-header">
+        <div className="page-header-body">
+          <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate('/reviews')} style={{ marginBottom: 6, paddingLeft: 0 }}>返回列表</Button>
+          <h1 className="page-header-title">审查详情</h1>
+        </div>
+        <div className="page-header-actions">
           <Button icon={<ThunderboltOutlined />} onClick={() => setAutofixOpen(true)}>自动修复</Button>
           <Button icon={<EyeOutlined />} onClick={handleViewHtmlReport}>HTML报告</Button>
           <Button icon={<DownloadOutlined />} onClick={handleDownloadReport}>下载报告</Button>
-        </Space>
+        </div>
       </div>
 
       <Descriptions bordered column={2} style={{ marginBottom: 24 }}>
@@ -146,7 +408,11 @@ export default function ReviewDetail() {
           <a onClick={() => navigate(`/projects/${review.project_id}`)}>{review.project_id.slice(0, 8)}...</a>
         </Descriptions.Item>
         <Descriptions.Item label="审查类型"><Tag color="blue">{review.review_type}</Tag></Descriptions.Item>
-        <Descriptions.Item label="触发方式"><Tag>{review.trigger_type}</Tag></Descriptions.Item>
+        <Descriptions.Item label="编排模式">
+          <Tag color={review.orchestration_mode === 'hierarchical' ? 'magenta' : 'cyan'}>
+            {review.orchestration_mode === 'hierarchical' ? '派发模式' : '并行模式'}
+          </Tag>
+        </Descriptions.Item>
         <Descriptions.Item label="状态">
           <Tag color={review.status === 'completed' ? 'green' : review.status === 'failed' ? 'red' : 'processing'}>
             {review.status}
@@ -173,6 +439,124 @@ export default function ReviewDetail() {
         />
       )}
 
+      <Card
+        title={<Space size={8}><ApartmentOutlined style={{ color: '#4f46e5' }} />执行流程（外层 Flow + 内层 Crew，每一步做了什么、为什么）</Space>}
+        style={{ marginBottom: 24 }}
+        extra={
+          <Space>
+            {liveSteps && <Tag color="processing" icon={<LoadingOutlined />}>实时跟踪中</Tag>}
+            <Tag color="purple">可观测性 · 学习模式</Tag>
+          </Space>
+        }
+      >
+        {steps.length === 0 ? (
+          <Typography.Text type="secondary">
+            暂无执行步骤记录（旧数据或步骤未持久化）。
+          </Typography.Text>
+        ) : (
+          <Timeline
+            items={parentSteps.map((s) => {
+              const children = s.agent_name ? (childrenByAgent[s.agent_name] || []) : [];
+              return {
+                dot: stepIcon(s.status),
+                children: (
+                  <div key={s.id} style={{ marginBottom: 4 }}>
+                    <Space style={{ marginBottom: 4 }} wrap>
+                      {s.phase === 'inner_crew' ? (
+                        <Tag color="purple">内层 Crew</Tag>
+                      ) : (
+                        <Tag color="blue">外层 Flow</Tag>
+                      )}
+                      <Typography.Text strong>{stepTitle(s)}</Typography.Text>
+                      {stepStatusTag(s)}
+                      {s.duration_ms != null && (
+                        <Typography.Text type="secondary">
+                          {(s.duration_ms / 1000).toFixed(1)}s
+                        </Typography.Text>
+                      )}
+                    </Space>
+                    <div style={{ marginBottom: 2 }}>{s.action_text}</div>
+                    {s.output_summary && (
+                      <div style={{ color: '#666', fontSize: 13 }}><ExportOutlined style={{ marginRight: 6, fontSize: 12 }} />产出：{s.output_summary}</div>
+                    )}
+                    {s.input_summary && (
+                      <div style={{ color: '#999', fontSize: 12 }}><ImportOutlined style={{ marginRight: 6, fontSize: 11 }} />输入：{s.input_summary}</div>
+                    )}
+                    {durationBar(s, maxParentDur)}
+                    {knowledgePanel(s)}
+
+                    {/* 子步骤：默认折叠，展开看模型调用 / 工具内部细节 */}
+                    {children.length > 0 && (
+                      <Collapse
+                        ghost
+                        size="small"
+                        style={{ marginTop: 4, marginLeft: -12 }}
+                        items={[{
+                          key: s.id,
+                          label: (
+                            <span style={{ fontSize: 13, color: '#555' }}>
+                              <RightOutlined style={{ fontSize: 10 }} /> 执行细节（{children.length} 条：模型调用 / 工具内部动作）
+                            </span>
+                          ),
+                          children: <div>{children.map(childStepRow)}</div>,
+                        }]}
+                      />
+                    )}
+                  </div>
+                ),
+              };
+            })}
+          />
+        )}
+      </Card>
+
+      {/* LLM 调用全文档案 */}
+      <Modal
+        title={
+          llmLog ? (
+            <Space>
+              <RobotOutlined style={{ color: '#8b5cf6' }} />
+              LLM 调用全文 · {llmLog.model || '?'} · {llmLog.total_tokens} tokens · {llmLog.latency_ms != null ? `${(llmLog.latency_ms / 1000).toFixed(1)}s` : '-'}
+            </Space>
+          ) : 'LLM 调用全文'
+        }
+        open={llmLogOpen}
+        onCancel={() => setLlmLogOpen(false)}
+        footer={null}
+        width={860}
+      >
+        {llmLogLoading || !llmLog ? (
+          <Spin style={{ display: 'block', margin: '40px auto' }} />
+        ) : (
+          <div style={{ maxHeight: '65vh', overflow: 'auto' }}>
+            {(llmLog.messages || []).map((m, i) => (
+              <div key={i} style={{ marginBottom: 12 }}>
+                <Tag color={m.role === 'system' ? 'orange' : m.role === 'user' ? 'blue' : m.role === 'assistant' ? 'green' : 'default'}>
+                  {m.role}
+                </Tag>
+                <pre style={{
+                  background: '#1e1e1e', color: '#d4d4d4', padding: 12, borderRadius: 6,
+                  fontSize: 12, whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: '6px 0 0',
+                }}>
+                  {m.content}
+                </pre>
+              </div>
+            ))}
+            {llmLog.response && (
+              <div style={{ marginBottom: 12 }}>
+                <Tag color="green">assistant（响应原文）</Tag>
+                <pre style={{
+                  background: '#1e1e1e', color: '#d4d4d4', padding: 12, borderRadius: 6,
+                  fontSize: 12, whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: '6px 0 0',
+                }}>
+                  {llmLog.response}
+                </pre>
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
+
       <Card title={`发现列表 (${findings.length})`}>
         <List
           dataSource={findings}
@@ -188,7 +572,7 @@ export default function ReviewDetail() {
                   menu={{
                     items: [
                       { key: 'acknowledged', label: '标记已确认', icon: <CheckCircleOutlined /> },
-                      { key: 'fixed', label: '标记已解决', icon: <CheckCircleOutlined style={{ color: '#52c41a' }} /> },
+                      { key: 'fixed', label: '标记已解决', icon: <CheckCircleOutlined style={{ color: '#10b981' }} /> },
                       { key: 'open', label: '重新打开', icon: <UndoOutlined /> },
                     ],
                     onClick: ({ key }) => handleStatusChange(finding.id, key),
@@ -283,7 +667,7 @@ export default function ReviewDetail() {
       >
         {!autofixResult ? (
           <div style={{ textAlign: 'center', padding: 24 }}>
-            <ThunderboltOutlined style={{ fontSize: 40, color: '#1677ff', marginBottom: 16 }} />
+            <ThunderboltOutlined style={{ fontSize: 40, color: '#4f46e5', marginBottom: 16 }} />
             <p>将自动修复标记为"可自动修复"的发现（如 import 排序、格式化等）</p>
             <p style={{ color: '#999' }}>建议先"预览补丁"确认后再"应用修复"</p>
           </div>
